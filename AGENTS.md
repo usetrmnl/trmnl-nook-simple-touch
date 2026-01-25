@@ -96,6 +96,40 @@ This repo is meant to be worked on with **Eclipse ADT** and/or the old Android *
 2. **Proxy**: Use a local proxy that accepts TLS 1.2+ and speaks TLS 1.0 to the NOOK
 3. **Different API**: Use APIs that still support TLS 1.0 (rare)
 
+### BouncyCastle TLS 1.2 workaround (SpongyCastle 1.58)
+This repo includes a **manual TLS client** using SpongyCastle to reach modern HTTPS endpoints on API 7.
+
+Key points:
+- **TLS 1.2 only** (SpongyCastle 1.58 does not support TLS 1.3).
+- Uses `TlsClientProtocol` with a **manual HTTP request/response** (no `HttpURLConnection`).
+- Adds **SNI** and `extended_master_secret` to satisfy modern servers.
+- Sets an explicit **cipher suite list** that prioritizes ECDHE_RSA + AES (GCM/CBC).
+
+#### Shortcuts (intentional for now):
+- **Trust‑all server certs** (no CA validation or pinning).
+- **No hostname verification** beyond SNI (because we bypass JSSE).
+- **Limited cipher list**; may need adjustment for other servers.
+- **No ALPN/HTTP2** (HTTP/1.1 only).
+
+#### Where implemented:
+- `src/com/bpmct/trmnl_nook_simple_touch/BouncyCastleHttpClient.java`
+
+#### Setup / install (SpongyCastle 1.58)
+This project uses **SpongyCastle 1.58.0.0** (repackaged BouncyCastle) because Android 2.1’s bundled BC is too old.
+
+1. Download JARs into `libs/`:
+   - `https://repo1.maven.org/maven2/com/madgag/spongycastle/core/1.58.0.0/core-1.58.0.0.jar`
+   - `https://repo1.maven.org/maven2/com/madgag/spongycastle/prov/1.58.0.0/prov-1.58.0.0.jar`
+   - `https://repo1.maven.org/maven2/com/madgag/spongycastle/bctls-jdk15on/1.58.0.0/bctls-jdk15on-1.58.0.0.jar`
+
+2. Ensure JARs are available on the classpath (ADT/Ant picks up `libs/*.jar` automatically).
+
+3. Rebuild the APK.
+
+Notes:
+- JARs are **gitignored** (large, local-only).
+- SpongyCastle 1.58 provides **TLS 1.2**, not TLS 1.3.
+
 ### Implementation notes:
 - Custom `TrustManager` can bypass certificate validation, but **cannot** upgrade the TLS protocol version
 - Always implement HTTP fallback for API calls on API 7
