@@ -11,6 +11,7 @@ import android.widget.TextView;
 import android.view.ViewGroup;
 
 public class SettingsActivity extends Activity {
+    private static final int APP_ROTATION_DEGREES = 90;
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
@@ -23,9 +24,6 @@ public class SettingsActivity extends Activity {
         root.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
                 ViewGroup.LayoutParams.FILL_PARENT));
-
-        RotateLayout rotateLayout = new RotateLayout(this);
-        rotateLayout.setAngle(90);
 
         LinearLayout inner = new LinearLayout(this);
         inner.setOrientation(LinearLayout.VERTICAL);
@@ -48,15 +46,11 @@ public class SettingsActivity extends Activity {
         hintParams.topMargin = 12;
         inner.addView(hint, hintParams);
 
-        rotateLayout.addView(inner, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
-
         FrameLayout.LayoutParams rotateParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
-        root.addView(rotateLayout, rotateParams);
+        root.addView(inner, rotateParams);
 
         root.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -64,6 +58,11 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        setContentView(root);
+        RotateLayout rotateRoot = new RotateLayout(this);
+        rotateRoot.setAngle(APP_ROTATION_DEGREES);
+        rotateRoot.addView(root, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.FILL_PARENT));
+        setContentView(rotateRoot);
     }
 }

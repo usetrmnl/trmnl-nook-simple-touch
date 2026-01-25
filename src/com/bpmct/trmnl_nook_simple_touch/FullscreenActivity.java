@@ -41,9 +41,11 @@ public class FullscreenActivity extends Activity {
     private TextView logView;
     private ImageView imageView;
     private ScrollView contentScroll;
-    private RotateLayout sidebarLayout;
+    private RotateLayout appRotateLayout;
+    private LinearLayout sidebarLayout;
     private View sidebarScrim;
     private TextView batteryView;
+    private RotateLayout imageRotateLayout;
     private boolean sidebarVisible = false;
     private final Handler refreshHandler = new Handler();
     private Runnable refreshRunnable;
@@ -51,7 +53,7 @@ public class FullscreenActivity extends Activity {
     private volatile long refreshMs = DEFAULT_REFRESH_MS;
     private final StringBuilder logBuffer = new StringBuilder();
     private static final int MAX_LOG_CHARS = 6000;
-    private static final int SIDEBAR_ROTATION_DEGREES = 90;
+    private static final int APP_ROTATION_DEGREES = 90;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -84,10 +86,15 @@ public class FullscreenActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT,
                 220));
 
+        imageRotateLayout = new RotateLayout(this);
+        imageRotateLayout.setAngle((360 - APP_ROTATION_DEGREES) % 360);
         imageView = new ImageView(this);
         imageView.setScaleType(ImageView.ScaleType.FIT_XY);
         imageView.setVisibility(View.GONE);
-        contentLayout.addView(imageView, new LinearLayout.LayoutParams(
+        imageRotateLayout.addView(imageView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.FILL_PARENT));
+        contentLayout.addView(imageRotateLayout, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
                 0,
                 1.0f));
@@ -132,24 +139,21 @@ public class FullscreenActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT,
                 ViewGroup.LayoutParams.FILL_PARENT));
 
-        // Sidebar content (rotated for NOOK orientation).
-        sidebarLayout = new RotateLayout(this);
-        sidebarLayout.setAngle(SIDEBAR_ROTATION_DEGREES);
+        // Sidebar content (normal orientation; root is rotated).
+        sidebarLayout = new LinearLayout(this);
+        sidebarLayout.setOrientation(LinearLayout.HORIZONTAL);
         sidebarLayout.setVisibility(View.GONE);
         sidebarLayout.setClickable(true);
         sidebarLayout.setFocusable(true);
 
-        LinearLayout sidebarInner = new LinearLayout(this);
-        sidebarInner.setOrientation(LinearLayout.HORIZONTAL);
-        sidebarInner.setPadding(18, 12, 18, 12);
-        sidebarInner.setBackgroundColor(0xFFEFEFEF);
-        sidebarInner.setClickable(true);
+        sidebarLayout.setPadding(18, 12, 18, 12);
+        sidebarLayout.setBackgroundColor(0xFFEFEFEF);
 
         batteryView = new TextView(this);
         batteryView.setTextColor(0xFF000000);
         batteryView.setTextSize(14);
         batteryView.setText("Battery: --%");
-        sidebarInner.addView(batteryView, new LinearLayout.LayoutParams(
+        sidebarLayout.addView(batteryView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -174,7 +178,7 @@ public class FullscreenActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         nextParams.leftMargin = 18;
-        sidebarInner.addView(nextButton, nextParams);
+        sidebarLayout.addView(nextButton, nextParams);
 
         Button settingsButton = new Button(this);
         settingsButton.setText("Settings");
@@ -201,11 +205,7 @@ public class FullscreenActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         settingsParams.leftMargin = 18;
-        sidebarInner.addView(settingsButton, settingsParams);
-
-        sidebarLayout.addView(sidebarInner, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        sidebarLayout.addView(settingsButton, settingsParams);
 
         FrameLayout.LayoutParams sidebarParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -214,7 +214,13 @@ public class FullscreenActivity extends Activity {
         root.addView(sidebarLayout, sidebarParams);
         sidebarLayout.bringToFront();
 
-        setContentView(root);
+        appRotateLayout = new RotateLayout(this);
+        appRotateLayout.setAngle(APP_ROTATION_DEGREES);
+        appRotateLayout.addView(root, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.FILL_PARENT));
+
+        setContentView(appRotateLayout);
 
         // Initial fetch (next display)
         startFetch();
@@ -371,6 +377,10 @@ public class FullscreenActivity extends Activity {
     }
 
     private void forceFullRefresh() {
+        if (imageRotateLayout != null) {
+            imageRotateLayout.requestLayout();
+            imageRotateLayout.invalidate();
+        }
         View root = getWindow().getDecorView();
         if (root == null) return;
         root.invalidate();
@@ -597,6 +607,7 @@ public class FullscreenActivity extends Activity {
                     if (ar.imageUrl != null) {
                         a.logD("image url: " + ar.imageUrl);
                     }
+                    a.forceFullRefresh();
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
                     float v = getBatteryVoltage(a);
@@ -617,6 +628,7 @@ public class FullscreenActivity extends Activity {
                 if (a.logView != null) {
                     a.logView.setVisibility(View.VISIBLE);
                 }
+                a.forceFullRefresh();
                 a.logD("response body:\n" + text);
                 a.logD("displayed response");
                 a.logD("next display in " + (a.refreshMs / 1000L) + "s");

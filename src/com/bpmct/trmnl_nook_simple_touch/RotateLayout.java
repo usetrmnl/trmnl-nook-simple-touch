@@ -98,11 +98,6 @@ public class RotateLayout extends ViewGroup {
             mappedY = x;
         }
 
-        android.util.Log.d("TRMNLAPI", "RotateLayout touch raw " + x + "," + y
-                + " -> " + mappedX + "," + mappedY
-                + " action=" + event.getAction() + " angle=" + angle
-                + " size=" + getWidth() + "x" + getHeight());
-
         MotionEvent transformed = MotionEvent.obtain(event);
         transformed.setLocation(mappedX, mappedY);
         boolean handled = super.dispatchTouchEvent(transformed);
