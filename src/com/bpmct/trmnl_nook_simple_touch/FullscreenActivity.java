@@ -1,6 +1,10 @@
 package com.bpmct.trmnl_nook_simple_touch;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.AsyncTask;
 import android.os.Handler;
@@ -106,6 +110,24 @@ public class FullscreenActivity extends Activity {
         super.onPause();
         if (refreshRunnable != null) {
             refreshHandler.removeCallbacks(refreshRunnable);
+        }
+    }
+
+    /**
+     * Reads battery level from ACTION_BATTERY_CHANGED sticky broadcast (API 7).
+     * Returns 0–100, or -1 if unknown.
+     */
+    private static int getBatteryLevelPercent(Context context) {
+        if (context == null) return -1;
+        try {
+            Intent intent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (intent == null) return -1;
+            int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 0);
+            if (scale <= 0 || level < 0) return -1;
+            return (level * 100) / scale;
+        } catch (Throwable t) {
+            return -1;
         }
     }
 
@@ -216,16 +238,19 @@ public class FullscreenActivity extends Activity {
 
         protected Object doInBackground(Object[] params) {
             String httpsUrl = (String) params[0];
+            FullscreenActivity a = (FullscreenActivity) activityRef.get();
+            int batteryLevel = getBatteryLevelPercent(a != null ? a : null);
+            if (a != null && batteryLevel >= 0) a.logD("battery-level: " + batteryLevel);
             
             // Try BouncyCastle TLS first (supports TLS 1.2)
             if (BouncyCastleHttpClient.isAvailable()) {
-                FullscreenActivity a = (FullscreenActivity) activityRef.get();
                 if (a != null) a.logD("trying BouncyCastle TLS 1.2");
                 String bcResult = BouncyCastleHttpClient.getHttps(
                         a != null ? a.getApplicationContext() : null,
                         httpsUrl,
                         apiId,
-                        apiToken);
+                        apiToken,
+                        batteryLevel);
                 if (bcResult != null && !bcResult.startsWith("Error:")) {
                     ApiResult parsed = null;
                     if (a != null) {
@@ -240,10 +265,9 @@ public class FullscreenActivity extends Activity {
             }
             
             // Fallback to system HttpURLConnection (TLS 1.0 only)
-            Object result = fetchUrl(httpsUrl, true, apiId, apiToken);
+            Object result = fetchUrl(httpsUrl, true, apiId, apiToken, batteryLevel);
             if (result != null && !result.toString().startsWith("Error:")) {
                 ApiResult parsed = null;
-                FullscreenActivity a = (FullscreenActivity) activityRef.get();
                 if (a != null) {
                     parsed = a.parseResponseAndMaybeFetchImage(result.toString());
                 }
@@ -256,7 +280,7 @@ public class FullscreenActivity extends Activity {
             return result;
         }
         
-        private Object fetchUrl(String url, boolean isHttps, String apiId, String apiToken) {
+        private Object fetchUrl(String url, boolean isHttps, String apiId, String apiToken, int batteryLevel) {
             HttpURLConnection conn = null;
             try {
                 FullscreenActivity a0 = (FullscreenActivity) activityRef.get();
@@ -274,6 +298,10 @@ public class FullscreenActivity extends Activity {
                 }
                 if (apiToken != null) {
                     conn.setRequestProperty("access-token", apiToken);
+                }
+                if (batteryLevel >= 0) {
+                    conn.setRequestProperty("battery-level", String.valueOf(batteryLevel));
+                    conn.setRequestProperty("Battery-Voltage", String.valueOf(batteryLevel));
                 }
 
                 // Explicit connect for API 7
@@ -368,6 +396,8 @@ public class FullscreenActivity extends Activity {
                     }
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+                    int bat = getBatteryLevelPercent(a);
+                    if (bat >= 0) a.logD("battery-level: " + bat);
                     return;
                 }
 
@@ -385,6 +415,8 @@ public class FullscreenActivity extends Activity {
                 a.logD("response body:\n" + text);
                 a.logD("displayed response");
                 a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+                int bat = getBatteryLevelPercent(a);
+                if (bat >= 0) a.logD("battery-level: " + bat);
                 return;
             }
 
@@ -393,6 +425,8 @@ public class FullscreenActivity extends Activity {
             a.logD("response body:\n" + text);
             a.logD("displayed response");
             a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+            int bat = getBatteryLevelPercent(a);
+            if (bat >= 0) a.logD("battery-level: " + bat);
         }
     }
 
