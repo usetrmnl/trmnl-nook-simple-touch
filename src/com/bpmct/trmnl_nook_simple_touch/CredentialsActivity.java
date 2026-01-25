@@ -52,12 +52,13 @@ public class CredentialsActivity extends Activity {
         idInput.setTextColor(0xFF000000);
         idInput.setTextSize(18);
         idInput.setPadding(12, 12, 12, 12);
-        idInput.setHint("e.g. 35946:BYOD:1:A083");
+        idInput.setHint("e.g. 12345:BYOD:1:B678");
         String existingId = ApiPrefs.getApiId(this);
         if (existingId != null) idInput.setText(existingId);
-        inner.addView(idInput, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.FILL_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams idParams = new LinearLayout.LayoutParams(
+                420,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        inner.addView(idInput, idParams);
 
         TextView tokenLabel = new TextView(this);
         tokenLabel.setText("API Key");
@@ -77,9 +78,10 @@ public class CredentialsActivity extends Activity {
         tokenInput.setHint("access-token");
         String existingToken = ApiPrefs.getApiToken(this);
         if (existingToken != null) tokenInput.setText(existingToken);
-        inner.addView(tokenInput, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.FILL_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams tokenParams = new LinearLayout.LayoutParams(
+                420,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        inner.addView(tokenInput, tokenParams);
 
         final TextView statusView = new TextView(this);
         statusView.setTextSize(12);
@@ -103,6 +105,15 @@ public class CredentialsActivity extends Activity {
         saveButton.setTextColor(0xFF000000);
         actions.addView(saveButton);
 
+        Button clearButton = new Button(this);
+        clearButton.setText("Clear");
+        clearButton.setTextColor(0xFF000000);
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        clearParams.leftMargin = 16;
+        actions.addView(clearButton, clearParams);
+
         Button backButton = new Button(this);
         backButton.setText("Back");
         backButton.setTextColor(0xFF000000);
@@ -123,6 +134,14 @@ public class CredentialsActivity extends Activity {
                 ApiPrefs.saveCredentials(CredentialsActivity.this, id, token);
                 statusView.setText("Saved.");
                 finish();
+            }
+        });
+
+        clearButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                idInput.setText("");
+                tokenInput.setText("");
+                statusView.setText("");
             }
         });
 
