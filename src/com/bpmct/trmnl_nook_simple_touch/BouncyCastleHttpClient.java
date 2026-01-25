@@ -65,10 +65,11 @@ public class BouncyCastleHttpClient {
      * Makes an HTTPS GET request using BouncyCastle TLS.
      * Returns response body as string, or error message on failure.
      * batteryLevel 0–100 is sent as battery-level header when >= 0; use -1 to omit.
+     * rssi is sent as rssi header when != -999 (e.g. -69 dBm); use -999 to omit.
      */
-    public static String getHttps(Context context, String url, String apiId, String apiToken, int batteryLevel) {
+    public static String getHttps(Context context, String url, String apiId, String apiToken, int batteryLevel, int rssi) {
         try {
-            return getHttpsImpl(context, url, apiId, apiToken, batteryLevel);
+            return getHttpsImpl(context, url, apiId, apiToken, batteryLevel, rssi);
         } catch (Throwable t) {
             Log.e(TAG, "BouncyCastle HTTPS failed", t);
             // Get full error message including class name
@@ -86,11 +87,11 @@ public class BouncyCastleHttpClient {
     }
 
     public static String getHttps(Context context, String url, String apiId, String apiToken) {
-        return getHttps(context, url, apiId, apiToken, -1);
+        return getHttps(context, url, apiId, apiToken, -1, -999);
     }
 
     public static String getHttps(String url, String apiId, String apiToken) {
-        return getHttps(null, url, apiId, apiToken, -1);
+        return getHttps(null, url, apiId, apiToken, -1, -999);
     }
 
     /**
@@ -106,7 +107,7 @@ public class BouncyCastleHttpClient {
         }
     }
     
-    private static String getHttpsImpl(Context context, String url, String apiId, String apiToken, int batteryLevel) throws Exception {
+    private static String getHttpsImpl(Context context, String url, String apiId, String apiToken, int batteryLevel, int rssi) throws Exception {
         // Parse URL
         java.net.URL u = new java.net.URL(url);
         String host = u.getHost();
@@ -162,6 +163,9 @@ public class BouncyCastleHttpClient {
             if (batteryLevel >= 0) {
                 writer.print("battery-level: " + batteryLevel + "\r\n");
                 writer.print("Battery-Voltage: " + batteryLevel + "\r\n");
+            }
+            if (rssi != -999) {
+                writer.print("rssi: " + rssi + "\r\n");
             }
             writer.print("Connection: close\r\n");
             writer.print("\r\n");

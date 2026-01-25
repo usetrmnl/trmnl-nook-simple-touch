@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.AsyncTask;
@@ -131,6 +133,20 @@ public class FullscreenActivity extends Activity {
         }
     }
 
+    /** WiFi RSSI in dBm (e.g. -69), or -999 if unknown. Requires ACCESS_WIFI_STATE. */
+    private static int getWifiRssi(Context context) {
+        if (context == null) return -999;
+        try {
+            WifiManager wm = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wm == null) return -999;
+            WifiInfo info = wm.getConnectionInfo();
+            if (info == null) return -999;
+            return info.getRssi();
+        } catch (Throwable t) {
+            return -999;
+        }
+    }
+
     private void startFetch() {
         if (fetchInProgress) {
             return;
@@ -240,7 +256,9 @@ public class FullscreenActivity extends Activity {
             String httpsUrl = (String) params[0];
             FullscreenActivity a = (FullscreenActivity) activityRef.get();
             int batteryLevel = getBatteryLevelPercent(a != null ? a : null);
+            int rssi = getWifiRssi(a != null ? a : null);
             if (a != null && batteryLevel >= 0) a.logD("battery-level: " + batteryLevel);
+            if (a != null && rssi != -999) a.logD("rssi: " + rssi);
             
             // Try BouncyCastle TLS first (supports TLS 1.2)
             if (BouncyCastleHttpClient.isAvailable()) {
@@ -250,7 +268,8 @@ public class FullscreenActivity extends Activity {
                         httpsUrl,
                         apiId,
                         apiToken,
-                        batteryLevel);
+                        batteryLevel,
+                        rssi);
                 if (bcResult != null && !bcResult.startsWith("Error:")) {
                     ApiResult parsed = null;
                     if (a != null) {
@@ -265,7 +284,7 @@ public class FullscreenActivity extends Activity {
             }
             
             // Fallback to system HttpURLConnection (TLS 1.0 only)
-            Object result = fetchUrl(httpsUrl, true, apiId, apiToken, batteryLevel);
+            Object result = fetchUrl(httpsUrl, true, apiId, apiToken, batteryLevel, rssi);
             if (result != null && !result.toString().startsWith("Error:")) {
                 ApiResult parsed = null;
                 if (a != null) {
@@ -280,7 +299,7 @@ public class FullscreenActivity extends Activity {
             return result;
         }
         
-        private Object fetchUrl(String url, boolean isHttps, String apiId, String apiToken, int batteryLevel) {
+        private Object fetchUrl(String url, boolean isHttps, String apiId, String apiToken, int batteryLevel, int rssi) {
             HttpURLConnection conn = null;
             try {
                 FullscreenActivity a0 = (FullscreenActivity) activityRef.get();
@@ -302,6 +321,9 @@ public class FullscreenActivity extends Activity {
                 if (batteryLevel >= 0) {
                     conn.setRequestProperty("battery-level", String.valueOf(batteryLevel));
                     conn.setRequestProperty("Battery-Voltage", String.valueOf(batteryLevel));
+                }
+                if (rssi != -999) {
+                    conn.setRequestProperty("rssi", String.valueOf(rssi));
                 }
 
                 // Explicit connect for API 7
@@ -398,6 +420,8 @@ public class FullscreenActivity extends Activity {
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
                     int bat = getBatteryLevelPercent(a);
                     if (bat >= 0) a.logD("battery-level: " + bat);
+                    int rssi = getWifiRssi(a);
+                    if (rssi != -999) a.logD("rssi: " + rssi);
                     return;
                 }
 
@@ -417,6 +441,8 @@ public class FullscreenActivity extends Activity {
                 a.logD("next display in " + (a.refreshMs / 1000L) + "s");
                 int bat = getBatteryLevelPercent(a);
                 if (bat >= 0) a.logD("battery-level: " + bat);
+                int rssi = getWifiRssi(a);
+                if (rssi != -999) a.logD("rssi: " + rssi);
                 return;
             }
 
@@ -427,6 +453,8 @@ public class FullscreenActivity extends Activity {
             a.logD("next display in " + (a.refreshMs / 1000L) + "s");
             int bat = getBatteryLevelPercent(a);
             if (bat >= 0) a.logD("battery-level: " + bat);
+            int rssi = getWifiRssi(a);
+            if (rssi != -999) a.logD("rssi: " + rssi);
         }
     }
 
