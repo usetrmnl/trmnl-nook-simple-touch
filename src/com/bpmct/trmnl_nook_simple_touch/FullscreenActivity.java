@@ -3,6 +3,7 @@ package com.bpmct.trmnl_nook_simple_touch;
 import android.app.Activity;
 import android.os.Bundle;
 import android.os.AsyncTask;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
@@ -21,12 +22,17 @@ import java.net.URLDecoder;
 import org.json.JSONObject;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 public class FullscreenActivity extends Activity {
     private static final String TAG = "TRMNLAPI";
+    private static final long REFRESH_MS = 2 * 60 * 1000;
     private TextView contentView;
     private TextView logView;
     private ImageView imageView;
     private ScrollView contentScroll;
+    private final Handler refreshHandler = new Handler();
+    private Runnable refreshRunnable;
+    private volatile boolean fetchInProgress = false;
     private final StringBuilder logBuffer = new StringBuilder();
     private static final int MAX_LOG_CHARS = 6000;
     @Override
@@ -78,10 +84,8 @@ public class FullscreenActivity extends Activity {
 
         setContentView(root);
 
-        // Fetch API (HTTPS)
-        String httpsUrl = ApiConfig.API_BASE_URL + ApiConfig.API_DISPLAY_PATH;
-        logD("start: " + httpsUrl);
-        ApiFetchTask.start(this, httpsUrl, ApiConfig.API_ID, ApiConfig.API_TOKEN);
+        // Initial fetch (current screen, no advance)
+        startFetch(false);
     }
 
     @Override
@@ -92,6 +96,40 @@ public class FullscreenActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        scheduleRefresh();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (refreshRunnable != null) {
+            refreshHandler.removeCallbacks(refreshRunnable);
+        }
+    }
+
+    private void startFetch(boolean advance) {
+        if (fetchInProgress) {
+            return;
+        }
+        fetchInProgress = true;
+        String path = advance ? ApiConfig.API_ADVANCE_PATH : ApiConfig.API_CURRENT_SCREEN_PATH;
+        String httpsUrl = ApiConfig.API_BASE_URL + path;
+        logD("start: " + httpsUrl);
+        ApiFetchTask.start(this, httpsUrl, ApiConfig.API_ID, ApiConfig.API_TOKEN);
+    }
+
+    private void scheduleRefresh() {
+        if (refreshRunnable == null) {
+            refreshRunnable = new Runnable() {
+                public void run() {
+                    startFetch(true);
+                    refreshHandler.postDelayed(this, REFRESH_MS);
+                }
+            };
+        }
+        refreshHandler.removeCallbacks(refreshRunnable);
+        refreshHandler.postDelayed(refreshRunnable, REFRESH_MS);
     }
 
     private void appendLogLine(String line) {
@@ -292,6 +330,7 @@ public class FullscreenActivity extends Activity {
             final FullscreenActivity a = (FullscreenActivity) activityRef.get();
             if (a == null || a.contentView == null) return;
 
+            a.fetchInProgress = false;
             if (result instanceof ApiResult) {
                 ApiResult ar = (ApiResult) result;
                 if (ar.showImage && ar.bitmap != null) {
@@ -361,14 +400,17 @@ public class FullscreenActivity extends Activity {
         try {
             JSONObject obj = new JSONObject(jsonText);
             int status = obj.optInt("status", -1);
-            if (status != 200) {
+            // API returns 200 for current_screen, 0 for display
+            if (!(status == 200 || status == 0)) {
                 return new ApiResult(jsonText);
             }
+            logD("api status: " + status);
 
             String imageUrl = obj.optString("image_url", null);
             if (imageUrl == null || imageUrl.length() == 0) {
                 return new ApiResult(jsonText);
             }
+            logD("api image_url: " + imageUrl);
 
             // Log a decoded URL for readability, but use the encoded URL for fetch.
             try {
@@ -381,19 +423,35 @@ public class FullscreenActivity extends Activity {
                     getApplicationContext(),
                     imageUrl);
             if (imageBytes == null || imageBytes.length == 0) {
-                logW("image fetch failed");
+                logW("image fetch failed for url: " + imageUrl);
                 return new ApiResult(jsonText);
             }
+            logD("image bytes: " + imageBytes.length);
 
             Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
             if (bitmap == null) {
                 logW("image decode failed");
                 return new ApiResult(jsonText);
             }
+            if (imageUrl.endsWith("/empty_state.bmp")) {
+                bitmap = rotate90(bitmap);
+            }
             return new ApiResult(jsonText, imageUrl, bitmap);
         } catch (Throwable t) {
             logW("response parse failed: " + t);
             return new ApiResult(jsonText);
+        }
+    }
+
+    private Bitmap rotate90(Bitmap src) {
+        try {
+            Matrix m = new Matrix();
+            m.postRotate(90f);
+            return Bitmap.createBitmap(
+                    src, 0, 0, src.getWidth(), src.getHeight(), m, true);
+        } catch (Throwable t) {
+            logW("image rotate failed: " + t);
+            return src;
         }
     }
 }
