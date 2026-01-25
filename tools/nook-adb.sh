@@ -1,0 +1,404 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# NOOK Simple Touch helper for ADB-over-TCP workflows.
+#
+# Usage examples:
+#   tools/nook-adb.sh connect --ip 192.168.1.50
+#   tools/nook-adb.sh connect               # interactive (optionally scans)
+#   tools/nook-adb.sh install --apk path/to/app.apk
+#   tools/nook-adb.sh build-install-run     # runs ant debug, installs, launches
+#   tools/nook-adb.sh logcat
+#   tools/nook-adb.sh shell
+#
+# Notes:
+# - This script assumes ADB-over-TCP (default port 5555) and does not enable TCP on the device.
+# - You may need to run: chmod +x tools/nook-adb.sh
+
+APP_PKG="com.bpmct.trmnl_nook_simple_touch"
+APP_ACTIVITY=".FullscreenActivity"
+
+DEFAULT_ADT_ADB="${HOME}/Downloads/adt-bundle-linux-x86_64-20140702/adt-bundle-linux-x86_64-20140702/sdk/platform-tools/adb"
+# NOTE: The Android SDK's `tools/ant/` is a *directory* containing build rules,
+# not the Apache Ant executable. The `ant` binary is typically provided by your
+# OS package manager (e.g. `apt install ant`) or a standalone Ant install.
+DEFAULT_ADT_ANT="${HOME}/Downloads/adt-bundle-linux-x86_64-20140702/adt-bundle-linux-x86_64-20140702/sdk/tools/ant"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+pick_adb() {
+  if [[ -n "${ADB:-}" ]]; then
+    echo "${ADB}"
+    return 0
+  fi
+  if [[ -x "${DEFAULT_ADT_ADB}" ]]; then
+    echo "${DEFAULT_ADT_ADB}"
+    return 0
+  fi
+  if have adb; then
+    command -v adb
+    return 0
+  fi
+  die "could not find adb. Set ADB=/path/to/adb or install adb in PATH."
+}
+
+ADB_BIN="$(pick_adb)"
+
+pick_ant() {
+  if [[ -n "${ANT:-}" ]]; then
+    echo "${ANT}"
+    return 0
+  fi
+  # `-x` is true for searchable directories; require an executable *file*.
+  if [[ -f "${DEFAULT_ADT_ANT}" && -x "${DEFAULT_ADT_ANT}" ]]; then
+    echo "${DEFAULT_ADT_ANT}"
+    return 0
+  fi
+  if have ant; then
+    command -v ant
+    return 0
+  fi
+  return 1
+}
+
+ANT_BIN="$(pick_ant || true)"
+
+ADB_HOSTPORT=""
+DEVICE_IP="192.168.1.236"
+DEVICE_PORT="5555"
+APK_PATH=""
+CIDR=""
+DO_SCAN="0"
+
+port_open() {
+  local ip="$1"
+  local port="$2"
+
+  if have timeout; then
+    timeout 1 bash -c "cat < /dev/null > /dev/tcp/${ip}/${port}" >/dev/null 2>&1
+    return $?
+  fi
+
+  if have nc; then
+    nc -z -w 1 "${ip}" "${port}" >/dev/null 2>&1
+    return $?
+  fi
+
+  return 1
+}
+
+default_cidr() {
+  # Pick the first global IPv4 address and assume /24.
+  # Example ip output: "2: wlp3s0    inet 192.168.1.10/24 brd ... scope global ..."
+  local line ip
+  line="$(ip -o -4 addr show scope global 2>/dev/null | head -n 1 || true)"
+  [[ -n "${line}" ]] || return 1
+  ip="$(echo "${line}" | awk '{print $4}' | cut -d/ -f1)"
+  [[ -n "${ip}" ]] || return 1
+  echo "${ip%.*}.0/24"
+}
+
+discover_candidates() {
+  local port="$1"
+  local cidr_in="${2:-}"
+
+  # Prefer nmap when available and we have a CIDR.
+  if have nmap && [[ -n "${cidr_in}" ]]; then
+    nmap -p "${port}" --open -n "${cidr_in}" 2>/dev/null \
+      | awk '/Nmap scan report for/ {print $NF}'
+    return 0
+  fi
+
+  # Otherwise, start from the ARP/neigh table (fast, no subnet scan).
+  if have ip; then
+    ip neigh show 2>/dev/null \
+      | awk '{print $1}' \
+      | while read -r ipaddr; do
+          if port_open "${ipaddr}" "${port}"; then
+            echo "${ipaddr}"
+          fi
+        done
+    return 0
+  fi
+
+  return 0
+}
+
+prompt_select_ip() {
+  local port="$1"
+  local candidates=()
+  local choice
+
+  if [[ "${DO_SCAN}" == "1" ]]; then
+    if [[ -z "${CIDR}" ]]; then
+      CIDR="$(default_cidr || true)"
+    fi
+
+    echo "Scanning for ADB on port ${port}${CIDR:+ in ${CIDR}}..." >&2
+    while IFS= read -r ip; do
+      [[ -n "${ip}" ]] && candidates+=("${ip}")
+    done < <(discover_candidates "${port}" "${CIDR}" | sort -u)
+  fi
+
+  if ((${#candidates[@]} > 0)); then
+    echo "Found possible devices:" >&2
+    local i=1
+    for ip in "${candidates[@]}"; do
+      echo "  [${i}] ${ip}:${port}" >&2
+      i=$((i+1))
+    done
+    echo -n "Pick a number, or type an IP: " >&2
+    read -r choice
+    if [[ "${choice}" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#candidates[@]} )); then
+      DEVICE_IP="${candidates[$((choice-1))]}"
+      return 0
+    fi
+    DEVICE_IP="${choice}"
+    return 0
+  fi
+
+  echo -n "Enter device IP (ADB-over-TCP): " >&2
+  read -r DEVICE_IP
+}
+
+adb_cmd() {
+  if [[ -n "${ADB_HOSTPORT}" ]]; then
+    ADB_SERVER_SOCKET="tcp:${ADB_HOSTPORT}" "${ADB_BIN}" "$@"
+  else
+    "${ADB_BIN}" "$@"
+  fi
+}
+
+adb_target() {
+  local serial="${DEVICE_IP}:${DEVICE_PORT}"
+  adb_cmd -s "${serial}" "$@"
+}
+
+connect_device() {
+  [[ -n "${DEVICE_IP}" ]] || prompt_select_ip "${DEVICE_PORT}"
+  [[ -n "${DEVICE_IP}" ]] || die "no device IP provided"
+
+  adb_cmd start-server >/dev/null
+  adb_cmd connect "${DEVICE_IP}:${DEVICE_PORT}"
+  adb_cmd devices
+}
+
+disconnect_device() {
+  [[ -n "${DEVICE_IP}" ]] || prompt_select_ip "${DEVICE_PORT}"
+  [[ -n "${DEVICE_IP}" ]] || die "no device IP provided"
+  adb_cmd disconnect "${DEVICE_IP}:${DEVICE_PORT}" || true
+  adb_cmd devices
+}
+
+ensure_connected() {
+  connect_device >/dev/null
+}
+
+pick_apk() {
+  if [[ -n "${APK_PATH}" ]]; then
+    [[ -f "${APK_PATH}" ]] || die "apk not found: ${APK_PATH}"
+    echo "${APK_PATH}"
+    return 0
+  fi
+
+  # Common Ant debug output:
+  #   bin/<project>-debug.apk
+  local apk
+  apk="$(ls -1t "${PROJECT_DIR}"/bin/*-debug.apk 2>/dev/null | head -n 1 || true)"
+  [[ -n "${apk}" ]] || die "no APK provided and none found in bin/*.apk. Use --apk or run ant debug."
+  echo "${apk}"
+}
+
+android_update_project() {
+  # Generate Ant build files (build.xml, etc.) for ADT/Ant-era projects.
+  #
+  # Derive SDK root from adb path:
+  #   <sdk>/platform-tools/adb  ->  <sdk>
+  local sdk_root android_tool
+  sdk_root="$(cd "$(dirname "${ADB_BIN}")/.." && pwd)"
+  android_tool="${sdk_root}/tools/android"
+
+  [[ -x "${android_tool}" ]] || die "android tool not found at ${android_tool}. Install old SDK tools or run build from Eclipse ADT."
+
+  # If build.xml already exists, do nothing.
+  if [[ -f "${PROJECT_DIR}/build.xml" ]]; then
+    return 0
+  fi
+
+  echo "Generating Ant build files (android update project)..." >&2
+  (cd "${PROJECT_DIR}" && "${android_tool}" update project -p . -t android-20) >/dev/null
+}
+
+ant_debug() {
+  if [[ -z "${ANT_BIN}" ]]; then
+    die "ant not found. Install Apache Ant (ensure `ant` is in PATH), or set ANT=/path/to/ant, or pass --apk."
+  fi
+  android_update_project
+  (cd "${PROJECT_DIR}" && "${ANT_BIN}" debug)
+}
+
+install_apk() {
+  ensure_connected
+  local apk
+  apk="$(pick_apk)"
+  adb_target wait-for-device
+  adb_target install -r "${apk}"
+}
+
+run_app() {
+  ensure_connected
+  adb_target shell am start -n "${APP_PKG}/${APP_ACTIVITY}"
+}
+
+logcat() {
+  ensure_connected
+  adb_target logcat
+}
+
+shell_into() {
+  ensure_connected
+  adb_target shell
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  tools/nook-adb.sh [global options] <command> [command options]
+
+Global options:
+  --adb /path/to/adb         Use a specific adb binary (or set ADB env var)
+  (env) ANT=/path/to/ant     Use a specific ant binary (or ensure `ant` is in PATH)
+  --adb-server host:5037     Use a remote ADB server (sets ADB_SERVER_SOCKET)
+  --ip <device-ip>           Device IP for ADB-over-TCP
+  --port <port>              Device port (default: 5555)
+  --scan                      Try to discover devices on the LAN
+  --cidr <a.b.c.0/24>        CIDR for nmap scanning (optional)
+
+Commands:
+  connect
+  disconnect
+  install --apk path/to/app.apk
+  run
+  build-install-run
+  logcat
+  shell
+
+Examples:
+  tools/nook-adb.sh connect --scan
+  tools/nook-adb.sh connect               # defaults to 192.168.1.236:5555
+  tools/nook-adb.sh connect --ip 192.168.1.50
+  tools/nook-adb.sh install --apk bin/trmnl-nook-simple-touch-debug.apk
+  tools/nook-adb.sh build-install-run     # runs android+ant, installs, launches
+EOF
+}
+
+parse_global_opts() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --adb)
+        shift
+        [[ $# -gt 0 ]] || die "--adb requires a value"
+        ADB_BIN="$1"
+        shift
+        ;;
+      --adb-server)
+        shift
+        [[ $# -gt 0 ]] || die "--adb-server requires host:port"
+        ADB_HOSTPORT="$1"
+        shift
+        ;;
+      --ip)
+        shift
+        [[ $# -gt 0 ]] || die "--ip requires a value"
+        DEVICE_IP="$1"
+        shift
+        ;;
+      --port)
+        shift
+        [[ $# -gt 0 ]] || die "--port requires a value"
+        DEVICE_PORT="$1"
+        shift
+        ;;
+      --scan)
+        DO_SCAN="1"
+        shift
+        ;;
+      --cidr)
+        shift
+        [[ $# -gt 0 ]] || die "--cidr requires a value (e.g. 192.168.1.0/24)"
+        CIDR="$1"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        # first non-option is the command
+        return 0
+        ;;
+    esac
+  done
+}
+
+main() {
+  parse_global_opts "$@"
+
+  local cmd="${1:-}"
+  shift || true
+
+  case "${cmd}" in
+    connect)
+      connect_device
+      ;;
+    disconnect)
+      disconnect_device
+      ;;
+    install)
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --apk)
+            shift
+            [[ $# -gt 0 ]] || die "--apk requires a value"
+            APK_PATH="$1"
+            shift
+            ;;
+          *)
+            die "unknown option for install: $1"
+            ;;
+        esac
+      done
+      install_apk
+      ;;
+    run)
+      run_app
+      ;;
+    build-install-run)
+      ant_debug
+      install_apk
+      run_app
+      ;;
+    logcat)
+      logcat
+      ;;
+    shell)
+      shell_into
+      ;;
+    ""|-h|--help)
+      usage
+      ;;
+    *)
+      die "unknown command: ${cmd} (run with --help)"
+      ;;
+  esac
+}
+
+main "$@"
