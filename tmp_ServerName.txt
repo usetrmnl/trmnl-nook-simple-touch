@@ -1,0 +1,12 @@
+Compiled from "ServerName.java"
+public class org.spongycastle.tls.ServerName {
+  protected short nameType;
+  protected java.lang.Object name;
+  public org.spongycastle.tls.ServerName(short, java.lang.Object);
+  public short getNameType();
+  public java.lang.Object getName();
+  public java.lang.String getHostName();
+  public void encode(java.io.OutputStream) throws java.io.IOException;
+  public static org.spongycastle.tls.ServerName parse(java.io.InputStream) throws java.io.IOException;
+  protected static boolean isCorrectType(short, java.lang.Object);
+}

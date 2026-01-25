@@ -1,0 +1,37 @@
+Compiled from "AbstractTlsClient.java"
+public abstract class org.spongycastle.tls.AbstractTlsClient extends org.spongycastle.tls.AbstractTlsPeer implements org.spongycastle.tls.TlsClient {
+  protected org.spongycastle.tls.TlsKeyExchangeFactory keyExchangeFactory;
+  protected org.spongycastle.tls.TlsClientContext context;
+  protected java.util.Vector supportedGroups;
+  protected java.util.Vector supportedSignatureAlgorithms;
+  protected short[] clientECPointFormats;
+  protected short[] serverECPointFormats;
+  protected int selectedCipherSuite;
+  protected short selectedCompressionMethod;
+  public org.spongycastle.tls.AbstractTlsClient(org.spongycastle.tls.crypto.TlsCrypto);
+  public org.spongycastle.tls.AbstractTlsClient(org.spongycastle.tls.crypto.TlsCrypto, org.spongycastle.tls.TlsKeyExchangeFactory);
+  protected boolean allowUnexpectedServerExtension(java.lang.Integer, byte[]) throws java.io.IOException;
+  protected void checkForUnexpectedServerExtension(java.util.Hashtable, java.lang.Integer) throws java.io.IOException;
+  protected org.spongycastle.tls.TlsECConfigVerifier createECConfigVerifier();
+  protected org.spongycastle.tls.CertificateStatusRequest getCertificateStatusRequest();
+  protected java.util.Vector getSNIServerNames();
+  protected java.util.Vector getSupportedSignatureAlgorithms();
+  public void init(org.spongycastle.tls.TlsClientContext);
+  public org.spongycastle.tls.TlsSession getSessionToResume();
+  public org.spongycastle.tls.ProtocolVersion getClientHelloRecordLayerVersion();
+  public org.spongycastle.tls.ProtocolVersion getClientVersion();
+  public boolean isFallback();
+  public java.util.Hashtable getClientExtensions() throws java.io.IOException;
+  public org.spongycastle.tls.ProtocolVersion getMinimumVersion();
+  public void notifyServerVersion(org.spongycastle.tls.ProtocolVersion) throws java.io.IOException;
+  public short[] getCompressionMethods();
+  public void notifySessionID(byte[]);
+  public void notifySelectedCipherSuite(int);
+  public void notifySelectedCompressionMethod(short);
+  public void processServerExtensions(java.util.Hashtable) throws java.io.IOException;
+  public void processServerSupplementalData(java.util.Vector) throws java.io.IOException;
+  public java.util.Vector getClientSupplementalData() throws java.io.IOException;
+  public org.spongycastle.tls.TlsCompression getCompression() throws java.io.IOException;
+  public org.spongycastle.tls.crypto.TlsCipher getCipher() throws java.io.IOException;
+  public void notifyNewSessionTicket(org.spongycastle.tls.NewSessionTicket) throws java.io.IOException;
+}

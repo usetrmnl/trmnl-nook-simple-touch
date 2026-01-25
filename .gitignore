@@ -12,6 +12,9 @@ out/
 *.dex
 *.class
 
+# SpongyCastle JARs (large, download manually - see libs/README_SPONGYCASTLE.md)
+libs/spongycastle-*.jar
+
 # Local SDK path (do not commit)
 local.properties
 

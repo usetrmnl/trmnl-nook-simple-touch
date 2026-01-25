@@ -1,0 +1,16 @@
+Compiled from "DefaultTlsClient.java"
+public abstract class org.spongycastle.tls.DefaultTlsClient extends org.spongycastle.tls.AbstractTlsClient {
+  protected static final int[] BASE_CIPHER_SUITES;
+  protected org.spongycastle.tls.TlsDHConfigVerifier dhConfigVerifier;
+  protected int[] supportedCipherSuites;
+  public org.spongycastle.tls.DefaultTlsClient(org.spongycastle.tls.crypto.TlsCrypto);
+  public org.spongycastle.tls.DefaultTlsClient(org.spongycastle.tls.crypto.TlsCrypto, org.spongycastle.tls.TlsKeyExchangeFactory, org.spongycastle.tls.TlsDHConfigVerifier);
+  public int[] getCipherSuites();
+  public org.spongycastle.tls.TlsKeyExchange getKeyExchange() throws java.io.IOException;
+  protected org.spongycastle.tls.TlsKeyExchange createDHKeyExchange(int) throws java.io.IOException;
+  protected org.spongycastle.tls.TlsKeyExchange createDHEKeyExchange(int) throws java.io.IOException;
+  protected org.spongycastle.tls.TlsKeyExchange createECDHKeyExchange(int) throws java.io.IOException;
+  protected org.spongycastle.tls.TlsKeyExchange createECDHEKeyExchange(int) throws java.io.IOException;
+  protected org.spongycastle.tls.TlsKeyExchange createRSAKeyExchange() throws java.io.IOException;
+  static {};
+}

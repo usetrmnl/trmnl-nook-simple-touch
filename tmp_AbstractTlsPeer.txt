@@ -1,0 +1,10 @@
+Compiled from "AbstractTlsPeer.java"
+public abstract class org.spongycastle.tls.AbstractTlsPeer implements org.spongycastle.tls.TlsPeer {
+  protected org.spongycastle.tls.AbstractTlsPeer(org.spongycastle.tls.crypto.TlsCrypto);
+  public org.spongycastle.tls.crypto.TlsCrypto getCrypto();
+  public boolean shouldUseGMTUnixTime();
+  public void notifySecureRenegotiation(boolean) throws java.io.IOException;
+  public void notifyAlertRaised(short, short, java.lang.String, java.lang.Throwable);
+  public void notifyAlertReceived(short, short);
+  public void notifyHandshakeComplete() throws java.io.IOException;
+}

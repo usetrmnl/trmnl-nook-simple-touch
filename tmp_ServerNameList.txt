@@ -1,0 +1,8 @@
+Compiled from "ServerNameList.java"
+public class org.spongycastle.tls.ServerNameList {
+  protected java.util.Vector serverNameList;
+  public org.spongycastle.tls.ServerNameList(java.util.Vector);
+  public java.util.Vector getServerNameList();
+  public void encode(java.io.OutputStream) throws java.io.IOException;
+  public static org.spongycastle.tls.ServerNameList parse(java.io.InputStream) throws java.io.IOException;
+}

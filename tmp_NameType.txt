@@ -1,0 +1,6 @@
+Compiled from "NameType.java"
+public class org.spongycastle.tls.NameType {
+  public static final short host_name;
+  public org.spongycastle.tls.NameType();
+  public static boolean isValid(short);
+}

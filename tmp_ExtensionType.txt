@@ -1,0 +1,32 @@
+Compiled from "ExtensionType.java"
+public class org.spongycastle.tls.ExtensionType {
+  public static final int server_name;
+  public static final int max_fragment_length;
+  public static final int client_certificate_url;
+  public static final int trusted_ca_keys;
+  public static final int truncated_hmac;
+  public static final int status_request;
+  public static final int user_mapping;
+  public static final int client_authz;
+  public static final int server_authz;
+  public static final int cert_type;
+  public static final int supported_groups;
+  public static final int ec_point_formats;
+  public static final int srp;
+  public static final int signature_algorithms;
+  public static final int use_srtp;
+  public static final int heartbeat;
+  public static final int application_layer_protocol_negotiation;
+  public static final int status_request_v2;
+  public static final int signed_certificate_timestamp;
+  public static final int client_certificate_type;
+  public static final int server_certificate_type;
+  public static final int padding;
+  public static final int encrypt_then_mac;
+  public static final int extended_master_secret;
+  public static final int DRAFT_token_binding;
+  public static final int cached_info;
+  public static final int session_ticket;
+  public static final int renegotiation_info;
+  public org.spongycastle.tls.ExtensionType();
+}

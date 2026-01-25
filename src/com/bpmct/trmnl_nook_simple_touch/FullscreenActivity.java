@@ -158,7 +158,18 @@ public class FullscreenActivity extends Activity {
             String httpsUrl = (String) params[0];
             String httpUrl = params.length > 1 ? (String) params[1] : null;
             
-            // Try HTTPS first
+            // Try BouncyCastle TLS first (supports TLS 1.2)
+            if (BouncyCastleHttpClient.isAvailable()) {
+                FullscreenActivity a = (FullscreenActivity) activityRef.get();
+                if (a != null) a.logD("trying BouncyCastle TLS 1.2");
+                String bcResult = BouncyCastleHttpClient.getHttps(httpsUrl, apiId, apiToken);
+                if (bcResult != null && !bcResult.startsWith("Error:")) {
+                    return bcResult;
+                }
+                if (a != null) a.logW("BouncyCastle TLS failed: " + bcResult);
+            }
+            
+            // Fallback to system HttpURLConnection (TLS 1.0 only)
             Object result = fetchUrl(httpsUrl, true, apiId, apiToken);
             
             // If HTTPS fails with SSL error, try HTTP fallback
@@ -171,7 +182,8 @@ public class FullscreenActivity extends Activity {
                 if (httpResult != null && httpResult.toString().startsWith("Error: HTTP ")) {
                     String msg =
                             "HTTPS failed due to TLS/SSL handshake.\n\n" +
-                            "This NOOK (Android 2.1 / API 7) cannot negotiate modern TLS (typically TLS 1.2+).\n\n" +
+                            "System TLS (TLS 1.0 only) failed. BouncyCastle TLS 1.2 " +
+                            (BouncyCastleHttpClient.isAvailable() ? "also failed" : "not available (see libs/README_SPONGYCASTLE.md)") + ".\n\n" +
                             "HTTP fallback also failed (" + httpResult + ").\n\n" +
                             "Fix: run a local HTTP→HTTPS proxy on your LAN and set ApiConfig.API_BASE_URL to that proxy (http://<LAN-IP>:<PORT>).";
                     return msg;

@@ -1,0 +1,21 @@
+Compiled from "TlsClient.java"
+public interface org.spongycastle.tls.TlsClient extends org.spongycastle.tls.TlsPeer {
+  public abstract void init(org.spongycastle.tls.TlsClientContext);
+  public abstract org.spongycastle.tls.TlsSession getSessionToResume();
+  public abstract org.spongycastle.tls.ProtocolVersion getClientHelloRecordLayerVersion();
+  public abstract org.spongycastle.tls.ProtocolVersion getClientVersion();
+  public abstract boolean isFallback();
+  public abstract int[] getCipherSuites();
+  public abstract short[] getCompressionMethods();
+  public abstract java.util.Hashtable getClientExtensions() throws java.io.IOException;
+  public abstract void notifyServerVersion(org.spongycastle.tls.ProtocolVersion) throws java.io.IOException;
+  public abstract void notifySessionID(byte[]);
+  public abstract void notifySelectedCipherSuite(int);
+  public abstract void notifySelectedCompressionMethod(short);
+  public abstract void processServerExtensions(java.util.Hashtable) throws java.io.IOException;
+  public abstract void processServerSupplementalData(java.util.Vector) throws java.io.IOException;
+  public abstract org.spongycastle.tls.TlsKeyExchange getKeyExchange() throws java.io.IOException;
+  public abstract org.spongycastle.tls.TlsAuthentication getAuthentication() throws java.io.IOException;
+  public abstract java.util.Vector getClientSupplementalData() throws java.io.IOException;
+  public abstract void notifyNewSessionTicket(org.spongycastle.tls.NewSessionTicket) throws java.io.IOException;
+}
