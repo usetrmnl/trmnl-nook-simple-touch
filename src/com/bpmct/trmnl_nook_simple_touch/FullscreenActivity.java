@@ -259,6 +259,7 @@ public class FullscreenActivity extends Activity {
             
             String text = result != null ? result.toString() : "Error: null result";
             a.contentView.setText(text);
+            a.logD("response body:\n" + text);
             a.logD("displayed response");
         }
     }
