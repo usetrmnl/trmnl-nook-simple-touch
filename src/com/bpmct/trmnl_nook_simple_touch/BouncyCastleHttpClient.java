@@ -4,6 +4,8 @@ import android.content.Context;
 import android.util.Log;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -85,6 +87,19 @@ public class BouncyCastleHttpClient {
     public static String getHttps(String url, String apiId, String apiToken) {
         return getHttps(null, url, apiId, apiToken);
     }
+
+    /**
+     * Makes an HTTPS GET request and returns raw bytes (e.g., images).
+     * Returns null on failure.
+     */
+    public static byte[] getHttpsBytes(Context context, String url) {
+        try {
+            return getHttpsBytesImpl(context, url);
+        } catch (Throwable t) {
+            Log.e(TAG, "BouncyCastle HTTPS bytes failed", t);
+            return null;
+        }
+    }
     
     private static String getHttpsImpl(Context context, String url, String apiId, String apiToken) throws Exception {
         // Parse URL
@@ -144,8 +159,7 @@ public class BouncyCastleHttpClient {
             writer.flush();
             
             // Read HTTP response
-            BufferedReader reader = new BufferedReader(new InputStreamReader(tlsIn, "UTF-8"));
-            String statusLine = reader.readLine();
+            String statusLine = readAsciiLine(tlsIn);
             if (statusLine == null) {
                 return "Error: No response from server";
             }
@@ -166,51 +180,78 @@ public class BouncyCastleHttpClient {
             // Read headers until blank line
             String line;
             int contentLength = -1;
-            while ((line = reader.readLine()) != null) {
+            boolean chunked = false;
+            while ((line = readAsciiLine(tlsIn)) != null) {
                 if (line.length() == 0) break;
-                if (line.toLowerCase().startsWith("content-length:")) {
+                String lower = line.toLowerCase();
+                if (lower.startsWith("content-length:")) {
                     try {
                         contentLength = Integer.parseInt(line.substring(15).trim());
                     } catch (Exception e) {
                         // Ignore
                     }
+                } else if (lower.startsWith("transfer-encoding:") && lower.indexOf("chunked") != -1) {
+                    chunked = true;
                 }
             }
             
-            // Read body
-            StringBuilder body = new StringBuilder();
-            if (statusCode >= 200 && statusCode < 300) {
-                if (contentLength > 0) {
-                    char[] buf = new char[contentLength];
-                    int total = 0;
-                    while (total < contentLength) {
-                        int n = reader.read(buf, total, contentLength - total);
+            // Read body (bytes first, then decode)
+            ByteArrayOutputStream bodyBytes = new ByteArrayOutputStream();
+            if (chunked) {
+                while (true) {
+                    String sizeLine = readAsciiLine(tlsIn);
+                    if (sizeLine == null) break;
+                    int semicolon = sizeLine.indexOf(';');
+                    if (semicolon > 0) {
+                        sizeLine = sizeLine.substring(0, semicolon);
+                    }
+                    int size = 0;
+                    try {
+                        size = Integer.parseInt(sizeLine.trim(), 16);
+                    } catch (Exception e) {
+                        return "Error: Invalid chunk size";
+                    }
+                    if (size <= 0) {
+                        // Consume trailing headers after last chunk
+                        while ((line = readAsciiLine(tlsIn)) != null && line.length() > 0) {
+                            // Ignore
+                        }
+                        break;
+                    }
+                    int remaining = size;
+                    byte[] buf = new byte[8192];
+                    while (remaining > 0) {
+                        int n = tlsIn.read(buf, 0, Math.min(buf.length, remaining));
                         if (n <= 0) break;
-                        total += n;
+                        bodyBytes.write(buf, 0, n);
+                        remaining -= n;
                     }
-                    body.append(buf, 0, total);
-                } else {
-                    // Read until EOF
-                    char[] buf = new char[8192];
-                    int n;
-                    while ((n = reader.read(buf)) > 0) {
-                        body.append(buf, 0, n);
-                    }
+                    // Consume CRLF after chunk
+                    readAsciiLine(tlsIn);
+                }
+            } else if (contentLength > 0) {
+                byte[] buf = new byte[8192];
+                int total = 0;
+                while (total < contentLength) {
+                    int n = tlsIn.read(buf, 0, Math.min(buf.length, contentLength - total));
+                    if (n <= 0) break;
+                    bodyBytes.write(buf, 0, n);
+                    total += n;
                 }
             } else {
-                // Read error body
-                char[] buf = new char[8192];
+                byte[] buf = new byte[8192];
                 int n;
-                while ((n = reader.read(buf)) > 0) {
-                    body.append(buf, 0, n);
+                while ((n = tlsIn.read(buf)) > 0) {
+                    bodyBytes.write(buf, 0, n);
                 }
             }
+            String body = new String(bodyBytes.toByteArray(), "UTF-8");
             
             if (statusCode >= 200 && statusCode < 300) {
                 Log.d(TAG, "BC got " + body.length() + " chars");
-                return body.toString();
+                return body;
             } else {
-                return "Error: HTTP " + statusCode + " " + body.toString();
+                return "Error: HTTP " + statusCode + " " + body;
             }
             
         } finally {
@@ -220,6 +261,135 @@ public class BouncyCastleHttpClient {
                 // Ignore
             }
         }
+    }
+
+    private static byte[] getHttpsBytesImpl(Context context, String url) throws Exception {
+        java.net.URL u = new java.net.URL(url);
+        String host = u.getHost();
+        int port = u.getPort() > 0 ? u.getPort() : 443;
+        String path = u.getPath();
+        if (path == null || path.length() == 0) {
+            path = "/";
+        }
+        if (u.getQuery() != null) {
+            path += "?" + u.getQuery();
+        }
+
+        Log.d(TAG, "BC connecting (bytes) to " + host + ":" + port + path);
+
+        Socket socket = new Socket(host, port);
+        socket.setSoTimeout(20000);
+        try {
+            TlsClientProtocol tlsProtocol = new TlsClientProtocol(
+                    socket.getInputStream(), socket.getOutputStream());
+            Log.d(TAG, "BC created TlsClientProtocol instance (bytes)");
+
+            X509TrustManager tm = getTrustManager(context);
+            if (tm == null) {
+                Log.e(TAG, "BC CA bundle not available for bytes request");
+                return null;
+            }
+            DefaultTlsClient tlsClient = createTlsClient(host, tm);
+
+            tlsProtocol.connect(tlsClient);
+            Log.d(TAG, "BC TLS handshake successful (bytes)");
+
+            OutputStream tlsOut = tlsProtocol.getOutputStream();
+            InputStream tlsIn = tlsProtocol.getInputStream();
+
+            PrintWriter writer = new PrintWriter(tlsOut, true);
+            writer.print("GET " + path + " HTTP/1.1\r\n");
+            writer.print("Host: " + host + "\r\n");
+            writer.print("User-Agent: TRMNL-Nook/1.0 (Android 2.1)\r\n");
+            writer.print("Accept: image/*\r\n");
+            writer.print("Connection: close\r\n");
+            writer.print("\r\n");
+            writer.flush();
+
+            String statusLine = readAsciiLine(tlsIn);
+            if (statusLine == null) {
+                Log.e(TAG, "BC bytes: no response from server");
+                return null;
+            }
+
+            int statusCode = 0;
+            try {
+                String[] parts = statusLine.split(" ");
+                if (parts.length >= 2) {
+                    statusCode = Integer.parseInt(parts[1]);
+                }
+            } catch (Exception e) {
+                // Ignore
+            }
+
+            String line;
+            int contentLength = -1;
+            while ((line = readAsciiLine(tlsIn)) != null) {
+                if (line.length() == 0) break;
+                if (line.toLowerCase().startsWith("content-length:")) {
+                    try {
+                        contentLength = Integer.parseInt(line.substring(15).trim());
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+            }
+
+            if (statusCode < 200 || statusCode >= 300) {
+                Log.e(TAG, "BC bytes: HTTP " + statusCode);
+                return null;
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            if (contentLength > 0) {
+                byte[] buf = new byte[8192];
+                int total = 0;
+                while (total < contentLength) {
+                    int n = tlsIn.read(buf, 0, Math.min(buf.length, contentLength - total));
+                    if (n <= 0) break;
+                    baos.write(buf, 0, n);
+                    total += n;
+                }
+            } else {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = tlsIn.read(buf)) > 0) {
+                    baos.write(buf, 0, n);
+                }
+            }
+
+            return baos.toByteArray();
+        } finally {
+            try {
+                socket.close();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+    }
+
+    private static String readAsciiLine(InputStream in) throws IOException {
+        ByteArrayOutputStream line = new ByteArrayOutputStream();
+        int c;
+        boolean gotCR = false;
+        while ((c = in.read()) != -1) {
+            if (c == '\r') {
+                gotCR = true;
+                continue;
+            }
+            if (c == '\n') {
+                break;
+            }
+            if (gotCR) {
+                line.write('\r');
+                gotCR = false;
+            }
+            line.write(c);
+        }
+        if (c == -1 && line.size() == 0) {
+            return null;
+        }
+        return new String(line.toByteArray(), "ISO-8859-1");
     }
     
     private static DefaultTlsClient createTlsClient(final String hostname, final X509TrustManager tm) {

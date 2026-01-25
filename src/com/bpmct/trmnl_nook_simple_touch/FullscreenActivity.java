@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.os.AsyncTask;
 import android.util.Log;
+import android.view.View;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -14,11 +16,17 @@ import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 
+import org.json.JSONObject;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 public class FullscreenActivity extends Activity {
     private static final String TAG = "TRMNLAPI";
     private TextView contentView;
     private TextView logView;
+    private ImageView imageView;
+    private ScrollView contentScroll;
     private final StringBuilder logBuffer = new StringBuilder();
     private static final int MAX_LOG_CHARS = 6000;
     @Override
@@ -31,7 +39,7 @@ public class FullscreenActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // Simple layout: log panel + scrollable response panel
+        // Simple layout: log panel + image or scrollable response panel
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setLayoutParams(new LinearLayout.LayoutParams(
@@ -48,16 +56,25 @@ public class FullscreenActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT,
                 220));
 
-        ScrollView scrollView = new ScrollView(this);
+        imageView = new ImageView(this);
+        imageView.setScaleType(ImageView.ScaleType.FIT_XY);
+        imageView.setVisibility(View.GONE);
+        root.addView(imageView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                0,
+                1.0f));
+
+        contentScroll = new ScrollView(this);
         contentView = new TextView(this);
         contentView.setPadding(20, 20, 20, 20);
         contentView.setTextColor(0xFF000000); // Black text for e-ink
         contentView.setTextSize(16);
         contentView.setText("Loading...");
-        scrollView.addView(contentView);
-        root.addView(scrollView, new LinearLayout.LayoutParams(
+        contentScroll.addView(contentView);
+        root.addView(contentScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
-                ViewGroup.LayoutParams.FILL_PARENT));
+                0,
+                1.0f));
 
         setContentView(root);
 
@@ -154,13 +171,31 @@ public class FullscreenActivity extends Activity {
                         apiId,
                         apiToken);
                 if (bcResult != null && !bcResult.startsWith("Error:")) {
-                    return bcResult;
+                    ApiResult parsed = null;
+                    if (a != null) {
+                        parsed = a.parseResponseAndMaybeFetchImage(bcResult);
+                    }
+                    if (parsed != null) {
+                        return parsed;
+                    }
+                    return new ApiResult(bcResult);
                 }
                 if (a != null) a.logW("BouncyCastle TLS failed: " + bcResult);
             }
             
             // Fallback to system HttpURLConnection (TLS 1.0 only)
             Object result = fetchUrl(httpsUrl, true, apiId, apiToken);
+            if (result != null && !result.toString().startsWith("Error:")) {
+                ApiResult parsed = null;
+                FullscreenActivity a = (FullscreenActivity) activityRef.get();
+                if (a != null) {
+                    parsed = a.parseResponseAndMaybeFetchImage(result.toString());
+                }
+                if (parsed != null) {
+                    return parsed;
+                }
+                return new ApiResult(result.toString());
+            }
             
             return result;
         }
@@ -256,11 +291,109 @@ public class FullscreenActivity extends Activity {
         protected void onPostExecute(Object result) {
             final FullscreenActivity a = (FullscreenActivity) activityRef.get();
             if (a == null || a.contentView == null) return;
-            
+
+            if (result instanceof ApiResult) {
+                ApiResult ar = (ApiResult) result;
+                if (ar.showImage && ar.bitmap != null) {
+                    if (ar.rawText != null) {
+                        a.logD("response body:\n" + ar.rawText);
+                    }
+                    a.imageView.setImageBitmap(ar.bitmap);
+                    a.imageView.setVisibility(View.VISIBLE);
+                    if (a.contentScroll != null) {
+                        a.contentScroll.setVisibility(View.GONE);
+                    }
+                    if (a.logView != null) {
+                        a.logView.setVisibility(View.GONE);
+                    }
+                    if (ar.imageUrl != null) {
+                        a.logD("image url: " + ar.imageUrl);
+                    }
+                    a.logD("displayed image");
+                    return;
+                }
+
+                String text = ar.rawText != null ? ar.rawText : "Error: null result";
+                a.contentView.setText(text);
+                if (a.contentScroll != null) {
+                    a.contentScroll.setVisibility(View.VISIBLE);
+                }
+                if (a.imageView != null) {
+                    a.imageView.setVisibility(View.GONE);
+                }
+                if (a.logView != null) {
+                    a.logView.setVisibility(View.VISIBLE);
+                }
+                a.logD("response body:\n" + text);
+                a.logD("displayed response");
+                return;
+            }
+
             String text = result != null ? result.toString() : "Error: null result";
             a.contentView.setText(text);
             a.logD("response body:\n" + text);
             a.logD("displayed response");
+        }
+    }
+
+    private static class ApiResult {
+        final String rawText;
+        final boolean showImage;
+        final Bitmap bitmap;
+        final String imageUrl;
+
+        ApiResult(String rawText) {
+            this.rawText = rawText;
+            this.showImage = false;
+            this.bitmap = null;
+            this.imageUrl = null;
+        }
+
+        ApiResult(String rawText, String imageUrl, Bitmap bitmap) {
+            this.rawText = rawText;
+            this.showImage = true;
+            this.bitmap = bitmap;
+            this.imageUrl = imageUrl;
+        }
+    }
+
+    private ApiResult parseResponseAndMaybeFetchImage(String jsonText) {
+        try {
+            JSONObject obj = new JSONObject(jsonText);
+            int status = obj.optInt("status", -1);
+            if (status != 200) {
+                return new ApiResult(jsonText);
+            }
+
+            String imageUrl = obj.optString("image_url", null);
+            if (imageUrl == null || imageUrl.length() == 0) {
+                return new ApiResult(jsonText);
+            }
+
+            // Log a decoded URL for readability, but use the encoded URL for fetch.
+            try {
+                String decoded = URLDecoder.decode(imageUrl, "UTF-8");
+                logD("decoded image url: " + decoded);
+            } catch (Throwable ignored) {
+            }
+
+            byte[] imageBytes = BouncyCastleHttpClient.getHttpsBytes(
+                    getApplicationContext(),
+                    imageUrl);
+            if (imageBytes == null || imageBytes.length == 0) {
+                logW("image fetch failed");
+                return new ApiResult(jsonText);
+            }
+
+            Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+            if (bitmap == null) {
+                logW("image decode failed");
+                return new ApiResult(jsonText);
+            }
+            return new ApiResult(jsonText, imageUrl, bitmap);
+        } catch (Throwable t) {
+            logW("response parse failed: " + t);
+            return new ApiResult(jsonText);
         }
     }
 }
