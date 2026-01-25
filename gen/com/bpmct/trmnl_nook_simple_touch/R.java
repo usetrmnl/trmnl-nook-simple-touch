@@ -18,12 +18,15 @@ public final class R {
     public static final class layout {
         public static final int activity_fullscreen=0x7f030000;
     }
+    public static final class raw {
+        public static final int ca_bundle=0x7f040000;
+    }
     public static final class string {
-        public static final int app_name=0x7f040000;
-        public static final int dummy_content=0x7f040001;
+        public static final int app_name=0x7f050000;
+        public static final int dummy_content=0x7f050001;
     }
     public static final class style {
-        public static final int AppTheme=0x7f050000;
-        public static final int FullscreenTheme=0x7f050001;
+        public static final int AppTheme=0x7f060000;
+        public static final int FullscreenTheme=0x7f060001;
     }
 }

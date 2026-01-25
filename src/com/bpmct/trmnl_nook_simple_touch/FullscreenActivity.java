@@ -162,7 +162,11 @@ public class FullscreenActivity extends Activity {
             if (BouncyCastleHttpClient.isAvailable()) {
                 FullscreenActivity a = (FullscreenActivity) activityRef.get();
                 if (a != null) a.logD("trying BouncyCastle TLS 1.2");
-                String bcResult = BouncyCastleHttpClient.getHttps(httpsUrl, apiId, apiToken);
+                String bcResult = BouncyCastleHttpClient.getHttps(
+                        a != null ? a.getApplicationContext() : null,
+                        httpsUrl,
+                        apiId,
+                        apiToken);
                 if (bcResult != null && !bcResult.startsWith("Error:")) {
                     return bcResult;
                 }

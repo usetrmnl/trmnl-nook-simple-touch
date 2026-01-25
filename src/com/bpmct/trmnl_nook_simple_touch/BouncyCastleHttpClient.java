@@ -1,17 +1,25 @@
 package com.bpmct.trmnl_nook_simple_touch;
 
+import android.content.Context;
 import android.util.Log;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Vector;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
-import org.spongycastle.tls.Certificate;
+import org.spongycastle.tls.AlertDescription;
 import org.spongycastle.tls.CertificateRequest;
 import org.spongycastle.tls.CipherSuite;
 import org.spongycastle.tls.DefaultTlsClient;
@@ -22,23 +30,28 @@ import org.spongycastle.tls.ServerNameList;
 import org.spongycastle.tls.TlsAuthentication;
 import org.spongycastle.tls.TlsClientProtocol;
 import org.spongycastle.tls.TlsCredentials;
+import org.spongycastle.tls.TlsFatalAlert;
 import org.spongycastle.tls.TlsServerCertificate;
 import org.spongycastle.tls.TlsExtensionsUtils;
 import org.spongycastle.tls.crypto.impl.bc.BcTlsCrypto;
+import org.spongycastle.tls.crypto.TlsCertificate;
 
 /**
- * HTTP client using BouncyCastle/SpongyCastle TLS for TLS 1.2/1.3 support on Android 2.1.
- * 
+ * HTTP client using BouncyCastle/SpongyCastle TLS for TLS 1.2 support on Android 2.1.
+ *
  * This bypasses the system's old OpenSSL and uses BouncyCastle's pure-Java TLS implementation.
- * 
+ *
  * Requires SpongyCastle JARs in libs/:
  * - spongycastle-core-1.58.0.0.jar
- * - spongycastle-prov-1.58.0.0.jar  
+ * - spongycastle-prov-1.58.0.0.jar
  * - spongycastle-bctls-jdk15on-1.58.0.0.jar
+ *
+ * Requires a CA bundle at res/raw/ca_bundle.pem
  */
 public class BouncyCastleHttpClient {
     private static final String TAG = "BCHttpClient";
     private static final boolean bcAvailable = true;
+    private static X509TrustManager trustManager = null;
 
     public static boolean isAvailable() {
         return bcAvailable;
@@ -48,9 +61,9 @@ public class BouncyCastleHttpClient {
      * Makes an HTTPS GET request using BouncyCastle TLS.
      * Returns response body as string, or error message on failure.
      */
-    public static String getHttps(String url, String apiId, String apiToken) {
+    public static String getHttps(Context context, String url, String apiId, String apiToken) {
         try {
-            return getHttpsImpl(url, apiId, apiToken);
+            return getHttpsImpl(context, url, apiId, apiToken);
         } catch (Throwable t) {
             Log.e(TAG, "BouncyCastle HTTPS failed", t);
             // Get full error message including class name
@@ -66,8 +79,12 @@ public class BouncyCastleHttpClient {
             return "Error: " + errorMsg;
         }
     }
+
+    public static String getHttps(String url, String apiId, String apiToken) {
+        return getHttps(null, url, apiId, apiToken);
+    }
     
-    private static String getHttpsImpl(String url, String apiId, String apiToken) throws Exception {
+    private static String getHttpsImpl(Context context, String url, String apiId, String apiToken) throws Exception {
         // Parse URL
         java.net.URL u = new java.net.URL(url);
         String host = u.getHost();
@@ -92,8 +109,12 @@ public class BouncyCastleHttpClient {
                     socket.getInputStream(), socket.getOutputStream());
             Log.d(TAG, "BC created TlsClientProtocol instance");
 
-            // Create TLS client (trust-all)
-            DefaultTlsClient tlsClient = createTlsClient(host);
+            // Create TLS client (CA-validated)
+            X509TrustManager tm = getTrustManager(context);
+            if (tm == null) {
+                return "Error: CA bundle not available (res/raw/ca_bundle.pem)";
+            }
+            DefaultTlsClient tlsClient = createTlsClient(host, tm);
 
             // Connect
             tlsProtocol.connect(tlsClient);
@@ -199,7 +220,7 @@ public class BouncyCastleHttpClient {
         }
     }
     
-    private static DefaultTlsClient createTlsClient(final String hostname) {
+    private static DefaultTlsClient createTlsClient(final String hostname, final X509TrustManager tm) {
         SecureRandom secureRandom = new SecureRandom();
         final BcTlsCrypto crypto = new BcTlsCrypto(secureRandom);
 
@@ -243,9 +264,24 @@ public class BouncyCastleHttpClient {
 
             public TlsAuthentication getAuthentication() {
                 return new TlsAuthentication() {
-                    public void notifyServerCertificate(TlsServerCertificate serverCertificate) {
-                        // Trust all certificates (for testing only)
-                        Log.d(TAG, "BC trusting server certificate (trust-all mode)");
+                    public void notifyServerCertificate(TlsServerCertificate serverCertificate) throws java.io.IOException {
+                        if (tm == null) {
+                            throw new TlsFatalAlert(AlertDescription.bad_certificate);
+                        }
+                        try {
+                            X509Certificate[] chain = toX509Chain(serverCertificate);
+                            if (chain == null || chain.length == 0) {
+                                throw new TlsFatalAlert(AlertDescription.bad_certificate);
+                            }
+                            String authType = chain[0].getPublicKey().getAlgorithm();
+                            tm.checkServerTrusted(chain, authType);
+                            Log.d(TAG, "BC server certificate validated against CA bundle");
+                        } catch (TlsFatalAlert e) {
+                            throw e;
+                        } catch (Throwable t) {
+                            Log.e(TAG, "BC certificate validation failed", t);
+                            throw new TlsFatalAlert(AlertDescription.bad_certificate);
+                        }
                     }
 
                     public TlsCredentials getClientCredentials(CertificateRequest certificateRequest) {
@@ -254,5 +290,75 @@ public class BouncyCastleHttpClient {
                 };
             }
         };
+    }
+
+    private static synchronized X509TrustManager getTrustManager(Context context) {
+        if (trustManager != null) {
+            return trustManager;
+        }
+        if (context == null) {
+            Log.w(TAG, "BC no context; cannot load CA bundle");
+            return null;
+        }
+        InputStream is = null;
+        try {
+            is = context.getResources().openRawResource(R.raw.ca_bundle);
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            Collection certs = cf.generateCertificates(is);
+            if (certs == null || certs.size() == 0) {
+                Log.e(TAG, "BC CA bundle is empty");
+                return null;
+            }
+
+            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+            ks.load(null, null);
+            int i = 0;
+            java.util.Iterator it = certs.iterator();
+            while (it.hasNext()) {
+                java.security.cert.Certificate cert = (java.security.cert.Certificate) it.next();
+                ks.setCertificateEntry("ca-" + i, cert);
+                i++;
+            }
+
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(
+                    TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(ks);
+            javax.net.ssl.TrustManager[] tms = tmf.getTrustManagers();
+            for (int j = 0; j < tms.length; j++) {
+                if (tms[j] instanceof X509TrustManager) {
+                    trustManager = (X509TrustManager) tms[j];
+                    return trustManager;
+                }
+            }
+
+            Log.e(TAG, "BC no X509TrustManager available");
+            return null;
+        } catch (Throwable t) {
+            Log.e(TAG, "BC failed to load CA bundle", t);
+            return null;
+        } finally {
+            if (is != null) {
+                try { is.close(); } catch (Throwable ignored) {}
+            }
+        }
+    }
+
+    private static X509Certificate[] toX509Chain(TlsServerCertificate serverCertificate) throws Exception {
+        if (serverCertificate == null || serverCertificate.getCertificate() == null) {
+            return null;
+        }
+        org.spongycastle.tls.Certificate tlsCert = serverCertificate.getCertificate();
+        TlsCertificate[] bcCerts = tlsCert.getCertificateList();
+        if (bcCerts == null || bcCerts.length == 0) {
+            return null;
+        }
+        X509Certificate[] chain = new X509Certificate[bcCerts.length];
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        for (int i = 0; i < bcCerts.length; i++) {
+            byte[] encoded = bcCerts[i].getEncoded();
+            ByteArrayInputStream bais = new ByteArrayInputStream(encoded);
+            chain[i] = (X509Certificate) cf.generateCertificate(bais);
+        }
+        return chain;
     }
 }
