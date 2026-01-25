@@ -18,6 +18,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.view.Gravity;
 
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
@@ -38,12 +41,17 @@ public class FullscreenActivity extends Activity {
     private TextView logView;
     private ImageView imageView;
     private ScrollView contentScroll;
+    private RotateLayout sidebarLayout;
+    private View sidebarScrim;
+    private TextView batteryView;
+    private boolean sidebarVisible = false;
     private final Handler refreshHandler = new Handler();
     private Runnable refreshRunnable;
     private volatile boolean fetchInProgress = false;
     private volatile long refreshMs = DEFAULT_REFRESH_MS;
     private final StringBuilder logBuffer = new StringBuilder();
     private static final int MAX_LOG_CHARS = 6000;
+    private static final int SIDEBAR_ROTATION_DEGREES = 90;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,10 +62,15 @@ public class FullscreenActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        FrameLayout root = new FrameLayout(this);
+        root.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.FILL_PARENT));
+
         // Simple layout: log panel + image or scrollable response panel
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setLayoutParams(new LinearLayout.LayoutParams(
+        LinearLayout contentLayout = new LinearLayout(this);
+        contentLayout.setOrientation(LinearLayout.VERTICAL);
+        contentLayout.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
                 ViewGroup.LayoutParams.FILL_PARENT));
 
@@ -67,14 +80,14 @@ public class FullscreenActivity extends Activity {
         logView.setTextSize(12);
         logView.setText("Logs:\n");
         // Keep log panel reasonably small.
-        root.addView(logView, new LinearLayout.LayoutParams(
+        contentLayout.addView(logView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
                 220));
 
         imageView = new ImageView(this);
         imageView.setScaleType(ImageView.ScaleType.FIT_XY);
         imageView.setVisibility(View.GONE);
-        root.addView(imageView, new LinearLayout.LayoutParams(
+        contentLayout.addView(imageView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
                 0,
                 1.0f));
@@ -86,10 +99,120 @@ public class FullscreenActivity extends Activity {
         contentView.setTextSize(16);
         contentView.setText("Loading...");
         contentScroll.addView(contentView);
-        root.addView(contentScroll, new LinearLayout.LayoutParams(
+        contentLayout.addView(contentScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
                 0,
                 1.0f));
+
+        root.addView(contentLayout, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.FILL_PARENT));
+
+        // Tap anywhere on content to toggle the sidebar.
+        View.OnClickListener toggleListener = new View.OnClickListener() {
+            public void onClick(View v) {
+                toggleSidebar();
+            }
+        };
+        contentLayout.setOnClickListener(toggleListener);
+        logView.setOnClickListener(toggleListener);
+        contentScroll.setOnClickListener(toggleListener);
+        contentView.setOnClickListener(toggleListener);
+        imageView.setOnClickListener(toggleListener);
+
+        // Scrim for closing sidebar when tapping outside.
+        sidebarScrim = new View(this);
+        sidebarScrim.setVisibility(View.GONE);
+        sidebarScrim.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                hideSidebar();
+            }
+        });
+        root.addView(sidebarScrim, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.FILL_PARENT));
+
+        // Sidebar content (rotated for NOOK orientation).
+        sidebarLayout = new RotateLayout(this);
+        sidebarLayout.setAngle(SIDEBAR_ROTATION_DEGREES);
+        sidebarLayout.setVisibility(View.GONE);
+        sidebarLayout.setClickable(true);
+        sidebarLayout.setFocusable(true);
+
+        LinearLayout sidebarInner = new LinearLayout(this);
+        sidebarInner.setOrientation(LinearLayout.HORIZONTAL);
+        sidebarInner.setPadding(18, 12, 18, 12);
+        sidebarInner.setBackgroundColor(0xFFEFEFEF);
+        sidebarInner.setClickable(true);
+
+        batteryView = new TextView(this);
+        batteryView.setTextColor(0xFF000000);
+        batteryView.setTextSize(14);
+        batteryView.setText("Battery: --%");
+        sidebarInner.addView(batteryView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        Button nextButton = new Button(this);
+        nextButton.setText("Next");
+        nextButton.setTextColor(0xFF000000);
+        nextButton.setClickable(true);
+        nextButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                logD("sidebar: next tapped");
+                hideSidebar();
+                startFetch();
+            }
+        });
+        nextButton.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                logD("sidebar: next touch action=" + event.getAction());
+                return false;
+            }
+        });
+        LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        nextParams.leftMargin = 18;
+        sidebarInner.addView(nextButton, nextParams);
+
+        Button settingsButton = new Button(this);
+        settingsButton.setText("Settings");
+        settingsButton.setTextColor(0xFF000000);
+        settingsButton.setClickable(true);
+        settingsButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                logD("sidebar: settings tapped");
+                hideSidebar();
+                try {
+                    startActivity(new Intent(FullscreenActivity.this, SettingsActivity.class));
+                } catch (Throwable t) {
+                    logW("settings launch failed: " + t);
+                }
+            }
+        });
+        settingsButton.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                logD("sidebar: settings touch action=" + event.getAction());
+                return false;
+            }
+        });
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        settingsParams.leftMargin = 18;
+        sidebarInner.addView(settingsButton, settingsParams);
+
+        sidebarLayout.addView(sidebarInner, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        FrameLayout.LayoutParams sidebarParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
+        root.addView(sidebarLayout, sidebarParams);
+        sidebarLayout.bringToFront();
 
         setContentView(root);
 
@@ -131,6 +254,21 @@ public class FullscreenActivity extends Activity {
             return mv / 1000f;
         } catch (Throwable t) {
             return -1f;
+        }
+    }
+
+    /** Battery percentage (0-100) from ACTION_BATTERY_CHANGED, or -1 if unknown. */
+    private static int getBatteryPercent(Context context) {
+        if (context == null) return -1;
+        try {
+            Intent intent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (intent == null) return -1;
+            int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            if (level < 0 || scale <= 0) return -1;
+            return Math.round((level * 100f) / scale);
+        } catch (Throwable t) {
+            return -1;
         }
     }
 
@@ -198,6 +336,51 @@ public class FullscreenActivity extends Activity {
         if (logView != null) {
             logView.setText("Logs:\n" + logBuffer.toString());
         }
+    }
+
+    private void toggleSidebar() {
+        if (sidebarVisible) {
+            hideSidebar();
+        } else {
+            showSidebar();
+        }
+    }
+
+    private void showSidebar() {
+        sidebarVisible = true;
+        updateSidebarBattery();
+        if (sidebarLayout != null) sidebarLayout.setVisibility(View.VISIBLE);
+        if (sidebarScrim != null) sidebarScrim.setVisibility(View.VISIBLE);
+    }
+
+    private void hideSidebar() {
+        sidebarVisible = false;
+        if (sidebarLayout != null) sidebarLayout.setVisibility(View.GONE);
+        if (sidebarScrim != null) sidebarScrim.setVisibility(View.GONE);
+        forceFullRefresh();
+    }
+
+    private void updateSidebarBattery() {
+        if (batteryView == null) return;
+        int percent = getBatteryPercent(this);
+        if (percent >= 0) {
+            batteryView.setText("Battery: " + percent + "%");
+        } else {
+            batteryView.setText("Battery: --%");
+        }
+    }
+
+    private void forceFullRefresh() {
+        View root = getWindow().getDecorView();
+        if (root == null) return;
+        root.invalidate();
+        root.requestLayout();
+        root.postDelayed(new Runnable() {
+            public void run() {
+                View r = getWindow().getDecorView();
+                if (r != null) r.invalidate();
+            }
+        }, 40);
     }
 
     private void logD(final String msg) {
