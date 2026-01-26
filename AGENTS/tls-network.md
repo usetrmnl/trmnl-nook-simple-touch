@@ -24,20 +24,17 @@ Key points:
 - TLS 1.2 only (no TLS 1.3 in SpongyCastle 1.58).
 - Manual HTTP request/response via `TlsClientProtocol`.
 - Adds SNI and `extended_master_secret`.
-- Explicit cipher suite list (prioritizes ECDHE_RSA + AES).
+- Explicit cipher suite list (ECDHE_RSA + AES GCM only).
 
 Shortcuts (intentional for now):
-- Trust-all server certs (no CA validation or pinning).
-- No hostname verification beyond SNI.
-- Limited cipher list.
+- No certificate pinning or revocation checking.
 - No ALPN/HTTP2 (HTTP/1.1 only).
 
 Where implemented:
 - `src/com/bpmct/trmnl_nook_simple_touch/BouncyCastleHttpClient.java`
 
 Current usage:
-- `DisplayActivity` prefers BouncyCastle for HTTPS.
-- If BouncyCastle is available, do not fall back to the system TLS stack.
+- `DisplayActivity` requires BouncyCastle for HTTPS (no system TLS fallback).
 
 Setup / install (SpongyCastle 1.58):
 1. Download JARs into `libs/`:

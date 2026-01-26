@@ -9,9 +9,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.InetAddress;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.CertificateFactory;
+import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
 import java.util.Hashtable;
@@ -37,6 +39,12 @@ import org.spongycastle.tls.TlsServerCertificate;
 import org.spongycastle.tls.TlsExtensionsUtils;
 import org.spongycastle.tls.crypto.impl.bc.BcTlsCrypto;
 import org.spongycastle.tls.crypto.TlsCertificate;
+import org.spongycastle.asn1.ASN1InputStream;
+import org.spongycastle.asn1.ASN1OctetString;
+import org.spongycastle.asn1.ASN1Primitive;
+import org.spongycastle.asn1.DERIA5String;
+import org.spongycastle.asn1.x509.GeneralName;
+import org.spongycastle.asn1.x509.GeneralNames;
 
 /**
  * HTTP client using BouncyCastle/SpongyCastle TLS for TLS 1.2 support on Android 2.1.
@@ -441,17 +449,13 @@ public class BouncyCastleHttpClient {
             }
 
             public ProtocolVersion getMinimumVersion() {
-                return ProtocolVersion.TLSv10;
+                return ProtocolVersion.TLSv12;
             }
 
             public int[] getCipherSuites() {
                 return new int[] {
                         CipherSuite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-                        CipherSuite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-                        CipherSuite.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-                        CipherSuite.TLS_RSA_WITH_AES_128_GCM_SHA256,
-                        CipherSuite.TLS_RSA_WITH_AES_128_CBC_SHA,
-                        CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA
+                        CipherSuite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
                 };
             }
 
@@ -582,44 +586,16 @@ public class BouncyCastleHttpClient {
             return false;
         }
         String host = hostname.toLowerCase();
-        try {
-            Collection altNames = cert.getSubjectAlternativeNames();
-            if (altNames != null) {
-                java.util.Iterator it = altNames.iterator();
-                while (it.hasNext()) {
-                    Object entryObj = it.next();
-                    if (!(entryObj instanceof List)) {
-                        continue;
-                    }
-                    List entry = (List) entryObj;
-                    if (entry.size() < 2) {
-                        continue;
-                    }
-                    Integer type = (Integer) entry.get(0);
-                    Object value = entry.get(1);
-                    if (type != null && value != null) {
-                        if (type.intValue() == 2) { // dNSName
-                            String dns = value.toString().toLowerCase();
-                            if (matchHostname(host, dns)) {
-                                return true;
-                            }
-                        } else if (type.intValue() == 7) { // iPAddress
-                            if (host.equals(value.toString().toLowerCase())) {
-                                return true;
-                            }
-                        }
-                    }
-                }
+        AltNameResult altResult = getSubjectAltNames(cert);
+        if (altResult != null && altResult.sanPresent) {
+            if (matchAltNames(host, altResult)) {
+                return true;
             }
-        } catch (Throwable t) {
-            Log.w(TAG, "BC SAN parse failed, falling back to CN: " + t);
+            return false;
         }
 
         String cn = getCommonName(cert);
-        if (cn != null && matchHostname(host, cn.toLowerCase())) {
-            return true;
-        }
-        return false;
+        return cn != null && matchHostname(host, cn.toLowerCase());
     }
 
     private static String getCommonName(X509Certificate cert) {
@@ -656,6 +632,136 @@ public class BouncyCastleHttpClient {
             if (host.endsWith(suffix)) {
                 String prefix = host.substring(0, host.length() - suffix.length());
                 return prefix.length() > 0 && prefix.indexOf('.') == -1;
+            }
+        }
+        return false;
+    }
+
+    private static class AltNameResult {
+        boolean sanPresent = false;
+        Vector dnsNames = new Vector();
+        Vector ipNames = new Vector();
+    }
+
+    private static AltNameResult getSubjectAltNames(X509Certificate cert) {
+        AltNameResult result = new AltNameResult();
+        Throwable parseError = null;
+        try {
+            Collection altNames = cert.getSubjectAlternativeNames();
+            if (altNames != null) {
+                result.sanPresent = true;
+                addAltNamesFromCollection(result, altNames);
+                return result;
+            }
+        } catch (CertificateParsingException e) {
+            parseError = e;
+        } catch (Throwable t) {
+            parseError = t;
+        }
+
+        AltNameResult manual = parseSanExtension(cert);
+        if (manual != null) {
+            if (manual.dnsNames.size() > 0 || manual.ipNames.size() > 0) {
+                if (parseError != null) {
+                    Log.d(TAG, "BC SAN parse failed, but manual SAN parse succeeded");
+                }
+                return manual;
+            }
+            if (parseError != null) {
+                Log.w(TAG, "BC SAN parse failed and manual SAN parse was empty: " + parseError);
+            }
+            return manual;
+        }
+        if (parseError != null) {
+            Log.w(TAG, "BC SAN parse failed and manual SAN parse missing: " + parseError);
+        }
+        return result;
+    }
+
+    private static void addAltNamesFromCollection(AltNameResult result, Collection altNames) {
+        java.util.Iterator it = altNames.iterator();
+        while (it.hasNext()) {
+            Object entryObj = it.next();
+            if (!(entryObj instanceof List)) {
+                continue;
+            }
+            List entry = (List) entryObj;
+            if (entry.size() < 2) {
+                continue;
+            }
+            Integer type = (Integer) entry.get(0);
+            Object value = entry.get(1);
+            if (type == null || value == null) {
+                continue;
+            }
+            if (type.intValue() == 2) { // dNSName
+                result.dnsNames.addElement(value.toString().toLowerCase());
+            } else if (type.intValue() == 7) { // iPAddress
+                result.ipNames.addElement(value.toString().toLowerCase());
+            }
+        }
+    }
+
+    private static AltNameResult parseSanExtension(X509Certificate cert) {
+        byte[] ext = cert.getExtensionValue("2.5.29.17"); // Subject Alternative Name
+        if (ext == null) {
+            return null;
+        }
+        AltNameResult result = new AltNameResult();
+        result.sanPresent = true;
+        ASN1InputStream extStream = null;
+        ASN1InputStream octetStream = null;
+        try {
+            extStream = new ASN1InputStream(ext);
+            ASN1Primitive extObj = extStream.readObject();
+            if (!(extObj instanceof ASN1OctetString)) {
+                return result;
+            }
+            byte[] octets = ((ASN1OctetString) extObj).getOctets();
+            octetStream = new ASN1InputStream(octets);
+            ASN1Primitive namesObj = octetStream.readObject();
+            GeneralNames names = GeneralNames.getInstance(namesObj);
+            GeneralName[] nameList = names.getNames();
+            for (int i = 0; i < nameList.length; i++) {
+                GeneralName name = nameList[i];
+                if (name == null) {
+                    continue;
+                }
+                if (name.getTagNo() == GeneralName.dNSName) {
+                    String dns = DERIA5String.getInstance(name.getName()).getString();
+                    if (dns != null) {
+                        result.dnsNames.addElement(dns.toLowerCase());
+                    }
+                } else if (name.getTagNo() == GeneralName.iPAddress) {
+                    ASN1OctetString ipOctets = ASN1OctetString.getInstance(name.getName());
+                    if (ipOctets != null) {
+                        String ip = InetAddress.getByAddress(ipOctets.getOctets()).getHostAddress();
+                        if (ip != null) {
+                            result.ipNames.addElement(ip.toLowerCase());
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "BC manual SAN parse failed: " + t);
+        } finally {
+            try { if (extStream != null) extStream.close(); } catch (Throwable ignored) {}
+            try { if (octetStream != null) octetStream.close(); } catch (Throwable ignored) {}
+        }
+        return result;
+    }
+
+    private static boolean matchAltNames(String host, AltNameResult result) {
+        for (int i = 0; i < result.dnsNames.size(); i++) {
+            String dns = (String) result.dnsNames.elementAt(i);
+            if (matchHostname(host, dns)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < result.ipNames.size(); i++) {
+            String ip = (String) result.ipNames.elementAt(i);
+            if (host.equals(ip)) {
+                return true;
             }
         }
         return false;

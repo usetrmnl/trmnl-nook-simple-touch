@@ -578,23 +578,10 @@ public class DisplayActivity extends Activity {
                 if (a != null) a.logW("BouncyCastle TLS failed: " + bcResult);
                 return bcResult;
             }
-            
-            // Fallback to system HttpURLConnection (TLS 1.0 only)
-            Object result = fetchUrl(httpsUrl, true, apiId, apiToken,
-                    batteryVoltage,
-                    rssi);
-            if (result != null && !result.toString().startsWith("Error:")) {
-                ApiResult parsed = null;
-                if (a != null) {
-                    parsed = a.parseResponseAndMaybeFetchImage(result.toString());
-                }
-                if (parsed != null) {
-                    return parsed;
-                }
-                return new ApiResult(result.toString());
-            }
-            
-            return result;
+
+            String error = "Error: TLS 1.2 client unavailable (BouncyCastle required)";
+            if (a != null) a.logW(error);
+            return error;
         }
         
         private Object fetchUrl(String url, boolean isHttps, String apiId, String apiToken,
