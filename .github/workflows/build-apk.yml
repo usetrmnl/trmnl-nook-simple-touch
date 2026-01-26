@@ -61,6 +61,7 @@ jobs:
           ANT_BIN="${ADT_ROOT}/eclipse/plugins/org.apache.ant_1.8.3.v201301120609/bin/ant"
 
           echo "sdk.dir=${SDK_DIR}" > local.properties
+          chmod +x "${ANT_BIN}"
           "${ANT_BIN}" -Dbuild.compiler=modern clean debug
 
       - name: Capture APK path
