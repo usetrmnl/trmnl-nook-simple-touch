@@ -22,12 +22,10 @@ jobs:
       - name: Install SDKMAN and Java 8
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           curl -s "https://get.sdkman.io" | bash
           export SDKMAN_DIR="${HOME}/.sdkman"
-          set +u
           source "${SDKMAN_DIR}/bin/sdkman-init.sh"
-          set -u
           sdk install java 8.0.302-open
           java -version
 
