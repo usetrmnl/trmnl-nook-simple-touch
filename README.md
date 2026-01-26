@@ -4,9 +4,9 @@ This is a TRMNL client for the Nook Simple Touch (BNRV300). The device usually g
 
 <table>
 <tr>
-<td width="33%"><img src="images/configuration.jpg" alt="Configuration"><br><em>Configuration screen</em></td>
-<td width="33%"><img src="images/display.jpg" alt="Display"><br><em>Fullscreen view of the display</em></td>
-<td width="33%"><img src="images/dialog.jpg" alt="Dialog"><br><em>Menu dialog</em></td>
+<td width="33%" style="text-align: center;"><img src="images/configuration.jpg" alt="Configuration"><br><em>Configuration screen</em></td>
+<td width="33%" style="text-align: center;"><img src="images/display.jpg" alt="Display"><br><em>Fullscreen view of the display</em></td>
+<td width="33%" style="text-align: center;"><img src="images/dialog.jpg" alt="Dialog"><br><em>Menu dialog</em></td>
 </tr>
 </table>
 
