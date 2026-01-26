@@ -20,17 +20,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install SDKMAN and Java 8
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -s "https://get.sdkman.io" | bash
-          export SDKMAN_DIR="${HOME}/.sdkman"
-          export SDKMAN_CANDIDATES_API="https://api.sdkman.io/2"
-          export SDKMAN_BROKER_API="https://broker.sdkman.io"
-          export ZSH_VERSION=""
-          source "${HOME}/.sdkman/bin/sdkman-init.sh"
-          sdk install java 8.0.302-open
-          java -version
+        uses: sdkman/sdkman-action@v1
+        with:
+          candidate: java
+          version: 8.0.302-open
 
       - name: Download Android ADT bundle
         shell: bash
@@ -56,11 +49,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export SDKMAN_DIR="${HOME}/.sdkman"
-          export SDKMAN_CANDIDATES_API="https://api.sdkman.io/2"
-          export SDKMAN_BROKER_API="https://broker.sdkman.io"
-          export ZSH_VERSION=""
-          source "${HOME}/.sdkman/bin/sdkman-init.sh"
           export JAVA_HOME="${HOME}/.sdkman/candidates/java/8.0.302-open"
           export PATH="${JAVA_HOME}/bin:${PATH}"
 
