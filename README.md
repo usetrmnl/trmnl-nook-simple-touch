@@ -2,10 +2,13 @@
 
 This is a TRMNL client for the Nook Simple Touch (BNRV300). The device usually goes for around $30 on eBay and has an 800x600 e-ink display.
 
-| | | |
-|:---:|:---:|:---:|
-| ![Configuration](images/configuration.jpg) | ![Display](images/display.jpg) | ![Dialog](images/dialog.jpg) |
-| *Configuration screen* | *Fullscreen view of the display* | *Menu dialog* |
+<table>
+<tr>
+<td width="33%"><img src="images/configuration.jpg" alt="Configuration"><br><em>Configuration screen</em></td>
+<td width="33%"><img src="images/display.jpg" alt="Display"><br><em>Fullscreen view of the display</em></td>
+<td width="33%"><img src="images/dialog.jpg" alt="Dialog"><br><em>Menu dialog</em></td>
+</tr>
+</table>
 
 Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-nook-simple-touch/issues/new).
 
