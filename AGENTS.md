@@ -12,6 +12,7 @@ Current notes:
 
 - `AGENTS/platform-constraints.md`
 - `AGENTS/build-tooling.md`
+- `AGENTS/release.md`
 - `AGENTS/tls-network.md`
 - `AGENTS/references.md`
 

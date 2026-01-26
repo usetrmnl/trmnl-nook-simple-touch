@@ -35,7 +35,7 @@ if [[ ! -f "${MANIFEST}" ]]; then
   exit 1
 fi
 
-python - <<PY
+python3 - <<PY
 import re
 from pathlib import Path
 

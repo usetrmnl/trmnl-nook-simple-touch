@@ -62,3 +62,7 @@ Fix:
   - `install-run-logcat` (uses existing APK, no Ant)
   - `build-install-run-logcat` (Ant build, install, run, logcat)
 - Use `--adb`, `--ant`, and `--logcat-filter` overrides as needed.
+
+## Release flow
+
+Release guidance now lives in `AGENTS/release.md`.
