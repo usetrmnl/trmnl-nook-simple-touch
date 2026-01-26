@@ -38,6 +38,7 @@ In the TRMNL Device settings, set the device type to "Amazon Kindle 7" (800x600)
 
 ## Roadmap
 - [ ] Document battery life expectations on new and old devices (https://github.com/bpmct/trmnl-nook-simple-touch/issues/9)
+- [ ] Rubber cleaning and mounting options (https://github.com/bpmct/trmnl-nook-simple-touch/issues/11)
 - [ ] Use device deep sleep to save battery (https://github.com/bpmct/trmnl-nook-simple-touch/issues/7)
 - [ ] Test on the Glowlight BNRV350 (https://github.com/bpmct/trmnl-nook-simple-touch/issues/6)
 
