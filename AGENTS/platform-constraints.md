@@ -38,3 +38,18 @@ Files that prove this:
 - Prefer black text on white background for critical content.
 - Avoid semi-transparent overlays (they render as muddy greys).
 - Avoid double outlines (container border + button border).
+
+## Display / input UX (NOOK Simple Touch)
+
+- App UI is rotated via a root `RotateLayout` (see `DisplayActivity`).
+- Touches are remapped in `RotateLayout` to match rotation.
+- Images are counter-rotated in a nested `RotateLayout` to stay upright.
+- Menu is centered (not a sidebar) and uses a full-screen scrim.
+- Ghosting mitigation: flash black -> white -> content when closing the menu.
+- Fullscreen log panel remains visible for debugging and e-ink feedback.
+
+## Settings / credentials UX
+
+- `SettingsActivity` is rotated (display-only).
+- `CredentialsActivity` is unrotated so the keyboard is upright.
+- Credentials are stored in `SharedPreferences` (`ApiPrefs`).

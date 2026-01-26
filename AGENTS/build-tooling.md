@@ -17,6 +17,11 @@ Point the project to the SDK with an untracked `local.properties`:
 - Project target: `target=android-20` (see `project.properties`)
 - Minimum runtime API is still 7 (see `AndroidManifest.xml`)
 
+## Runtime config storage
+
+- API credentials and base URL are no longer stored in files.
+- `ApiPrefs` persists them via `SharedPreferences`.
+
 ## Locating binaries (what we learned)
 
 ADB (preferred order in scripts):

@@ -35,6 +35,10 @@ Shortcuts (intentional for now):
 Where implemented:
 - `src/com/bpmct/trmnl_nook_simple_touch/BouncyCastleHttpClient.java`
 
+Current usage:
+- `DisplayActivity` prefers BouncyCastle for HTTPS.
+- If BouncyCastle is available, do not fall back to the system TLS stack.
+
 Setup / install (SpongyCastle 1.58):
 1. Download JARs into `libs/`:
    - `https://repo1.maven.org/maven2/com/madgag/spongycastle/core/1.58.0.0/core-1.58.0.0.jar`
@@ -50,24 +54,23 @@ Notes:
 ## Network API patterns for API 7
 
 HTTP/HTTPS requests:
-- Use `HttpURLConnection` (available in API 7).
+- Use `HttpURLConnection` (available in API 7) only when BouncyCastle is
+  unavailable.
 - Always call `connect()` before `getResponseCode()`.
 - Set 15-20s timeouts.
 - Handle `-1` response codes (connection failures).
-- Retry transient failures.
 
 Error handling:
 - Log full stack traces to logcat.
 - Show user-friendly errors on screen.
-- Detect SSL errors and trigger HTTP fallback.
+- Avoid TLS 1.0 fallback when BouncyCastle is available.
 
 Example pattern (see `DisplayActivity.java`):
 ```java
-// Try HTTPS first
-Object result = fetchUrl(httpsUrl, true);
-
-// If HTTPS fails with SSL error, try HTTP fallback
-if (result != null && result.toString().contains("SSL") && httpUrl != null) {
-    result = fetchUrl(httpUrl, false);
-}
+// Prefer BouncyCastle for HTTPS; avoid TLS 1.0 fallback if available.
 ```
+
+## API base URL normalization
+
+- Base URL includes `/api` (e.g., `https://usetrmnl.com/api`).
+- `ApiPrefs` normalizes user input to ensure exactly one `/api` segment.

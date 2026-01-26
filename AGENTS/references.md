@@ -11,6 +11,13 @@
 - Practical reference (ADT bundle + JDK 8 + NST revival):
   `https://github.com/jonatron/trook/`
 
+## Local implementation notes
+
+- Main screen entry point: `DisplayActivity`.
+- Credentials flow: `SettingsActivity` -> `CredentialsActivity`.
+- API settings are stored in `SharedPreferences` via `ApiPrefs`.
+- Default API base URL is defined in `strings.xml` (`api_base_url_default`).
+
 ## Android docs guidance
 
 Modern `developer.android.com` pages assume newer Android versions.
