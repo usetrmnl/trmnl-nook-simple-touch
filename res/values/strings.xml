@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="app_name">trmnl-nook-simple-touch</string>
+    <string name="app_name">TRMNL Client</string>
     <string name="dummy_content">NOOK\nTEST\nPLACEHOLDER</string>
     <string name="api_base_url_default">https://usetrmnl.com/api</string>
 
