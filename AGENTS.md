@@ -33,5 +33,7 @@ Current notes:
 - `AGENTS/build-tooling.md`
 - `AGENTS/release.md`
 - `AGENTS/tls-network.md`
+- `AGENTS/sleep-wake-cycle.md`
+- `AGENTS/ux-patterns.md`
 - `AGENTS/references.md`
 
