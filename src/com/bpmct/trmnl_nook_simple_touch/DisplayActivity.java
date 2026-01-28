@@ -702,8 +702,8 @@ public class DisplayActivity extends Activity {
     }
 
     private void startFetch() {
-        // If we're not connected, wait for connectivity then fetch (no fixed 45s).
-        if (ApiPrefs.isAllowSleep(this) && !isConnectedToNetwork(this)) {
+        // Always wait for WiFi before attempting fetch
+        if (!isConnectedToNetwork(this)) {
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
             if (wifi != null && !wifi.isWifiEnabled()) {
                 wifi.setWifiEnabled(true);
