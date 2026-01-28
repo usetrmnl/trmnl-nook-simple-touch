@@ -66,6 +66,9 @@ public class DisplayActivity extends Activity {
     private RotateLayout appRotateLayout;
     private FrameLayout rootLayout;
     private LinearLayout menuLayout;
+    private LinearLayout bootLayout;
+    private TextView bootStatus;
+    private boolean bootComplete = false;
     private View menuScrim;
     private View flashOverlay;
     private TextView batteryView;
@@ -116,15 +119,57 @@ public class DisplayActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT,
                 ViewGroup.LayoutParams.FILL_PARENT));
 
+        // Boot screen header: icon + title + status (compact, at top)
+        bootLayout = new LinearLayout(this);
+        bootLayout.setOrientation(LinearLayout.HORIZONTAL);
+        bootLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        bootLayout.setPadding(20, 20, 20, 10);
+        bootLayout.setBackgroundColor(0xFFFFFFFF);
+        
+        ImageView bootIcon = new ImageView(this);
+        bootIcon.setImageResource(R.drawable.ic_launcher);
+        bootIcon.setScaleType(ImageView.ScaleType.CENTER);
+        bootLayout.addView(bootIcon, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        LinearLayout bootTextLayout = new LinearLayout(this);
+        bootTextLayout.setOrientation(LinearLayout.VERTICAL);
+        bootTextLayout.setPadding(15, 0, 0, 0);
+        
+        TextView bootTitle = new TextView(this);
+        bootTitle.setText("TRMNL");
+        bootTitle.setTextColor(0xFF000000);
+        bootTitle.setTextSize(22);
+        bootTextLayout.addView(bootTitle, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        bootStatus = new TextView(this);
+        bootStatus.setText("Starting...");
+        bootStatus.setTextColor(0xFF666666);
+        bootStatus.setTextSize(12);
+        bootTextLayout.addView(bootStatus, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        bootLayout.addView(bootTextLayout, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        contentLayout.addView(bootLayout, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
         logView = new TextView(this);
-        logView.setPadding(20, 20, 20, 20);
+        logView.setPadding(20, 10, 20, 20);
         logView.setTextColor(0xFF000000); // Black text for e-ink
-        logView.setTextSize(12);
-        logView.setText("Logs:\n");
-        // Keep log panel reasonably small.
+        logView.setTextSize(11);
+        logView.setText("");
+        // Logs stream during boot below the header
         contentLayout.addView(logView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
-                220));
+                0, 1.0f));
 
         imageRotateLayout = new RotateLayout(this);
         imageRotateLayout.setAngle((360 - APP_ROTATION_DEGREES) % 360);
@@ -140,11 +185,12 @@ public class DisplayActivity extends Activity {
                 1.0f));
 
         contentScroll = new ScrollView(this);
+        contentScroll.setVisibility(View.GONE); // Hidden during boot
         contentView = new TextView(this);
         contentView.setPadding(20, 20, 20, 20);
         contentView.setTextColor(0xFF000000); // Black text for e-ink
         contentView.setTextSize(16);
-        contentView.setText("Loading...");
+        contentView.setText("");
         contentScroll.addView(contentView);
         contentLayout.addView(contentScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
@@ -418,6 +464,7 @@ public class DisplayActivity extends Activity {
             }
         };
         refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, CONNECTIVITY_MAX_WAIT_MS);
+        setBootStatus("Waiting for WiFi...");
         logD("waiting for connectivity, fetch as soon as up (max " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s)");
     }
 
@@ -719,6 +766,7 @@ public class DisplayActivity extends Activity {
         }
         fetchInProgress = true;
         fetchStartedFromMenu = menuVisible;
+        setBootStatus("Fetching...");
         appendLogLine("Fetching...");
         // Only show Loading in the dialog when user tapped Next. Resume/alarm wake: keep previous display, fetch in background.
         if (menuVisible) {
@@ -779,8 +827,26 @@ public class DisplayActivity extends Activity {
         }
         logBuffer.append(line).append("\n");
         if (logView != null) {
-            logView.setText("Logs:\n" + logBuffer.toString());
+            logView.setText(logBuffer.toString());
         }
+    }
+    
+    /** Update boot screen status text */
+    private void setBootStatus(final String status) {
+        if (bootStatus != null && !bootComplete) {
+            refreshHandler.post(new Runnable() {
+                public void run() {
+                    if (bootStatus != null) bootStatus.setText(status);
+                }
+            });
+        }
+    }
+    
+    /** Hide boot screen and show normal content */
+    private void hideBootScreen() {
+        if (bootComplete) return;
+        bootComplete = true;
+        if (bootLayout != null) bootLayout.setVisibility(View.GONE);
     }
 
     private void toggleMenu() {
@@ -1140,6 +1206,7 @@ public class DisplayActivity extends Activity {
                     if (ar.rawText != null) {
                         a.logD("response body:\n" + ar.rawText);
                     }
+                    a.hideBootScreen();
                     a.imageView.setImageBitmap(ar.bitmap);
                     a.lastDisplayedImage = ar.bitmap;
                     a.imageView.setVisibility(View.VISIBLE);
