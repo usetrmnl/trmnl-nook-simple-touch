@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -68,11 +69,15 @@ public class DisplayActivity extends Activity {
     private View menuScrim;
     private View flashOverlay;
     private TextView batteryView;
+    private Button nextButton;
+    private Button settingsButton;
+    private TextView loadingStatusView;
     private RotateLayout imageRotateLayout;
     private boolean menuVisible = false;
     private final Handler refreshHandler = new Handler();
     private Runnable refreshRunnable;
     private volatile boolean fetchInProgress = false;
+    private volatile boolean fetchStartedFromMenu = false;
     private volatile long refreshMs = DEFAULT_REFRESH_MS;
     private final StringBuilder logBuffer = new StringBuilder();
     private static final int MAX_LOG_CHARS = 6000;
@@ -81,8 +86,11 @@ public class DisplayActivity extends Activity {
     private AlarmManager alarmManager;
     private PendingIntent alarmPendingIntent;
     private BroadcastReceiver alarmReceiver;
+    private BroadcastReceiver connectivityReceiver;
     private Runnable pendingSleepRunnable;
     private Runnable pendingWifiWarmupRunnable;
+    private Runnable pendingConnectivityTimeoutRunnable;
+    private static final long CONNECTIVITY_MAX_WAIT_MS = 30 * 1000;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -195,24 +203,23 @@ public class DisplayActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        Button nextButton = new Button(this);
+        nextButton = new Button(this);
         nextButton.setText("Next");
         nextButton.setTextColor(0xFF000000);
         nextButton.setClickable(true);
-        nextButton.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                logD("menu: next tapped");
-                hideMenu();
-                if (USE_GENERIC_IMAGE) {
-                    showGenericImageAndSleep();
-                } else {
-                    startFetch();
-                }
-            }
-        });
         nextButton.setOnTouchListener(new View.OnTouchListener() {
-            public boolean onTouch(View v, android.view.MotionEvent event) {
-                logD("menu: next touch action=" + event.getAction());
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    logD("menu: next tapped");
+                    if (USE_GENERIC_IMAGE) {
+                        hideMenu();
+                        showGenericImageAndSleep();
+                    } else {
+                        showMenuStatus("Loading...", false);
+                        startFetch();
+                    }
+                    return true;
+                }
                 return false;
             }
         });
@@ -222,24 +229,22 @@ public class DisplayActivity extends Activity {
         nextParams.leftMargin = 18;
         menuLayout.addView(nextButton, nextParams);
 
-        Button settingsButton = new Button(this);
+        settingsButton = new Button(this);
         settingsButton.setText("Settings");
         settingsButton.setTextColor(0xFF000000);
         settingsButton.setClickable(true);
-        settingsButton.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                logD("menu: settings tapped");
-                hideMenu();
-                try {
-                    startActivity(new Intent(DisplayActivity.this, SettingsActivity.class));
-                } catch (Throwable t) {
-                    logW("settings launch failed: " + t);
-                }
-            }
-        });
         settingsButton.setOnTouchListener(new View.OnTouchListener() {
-            public boolean onTouch(View v, android.view.MotionEvent event) {
-                logD("menu: settings touch action=" + event.getAction());
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    logD("menu: settings tapped");
+                    hideMenu();
+                    try {
+                        startActivity(new Intent(DisplayActivity.this, SettingsActivity.class));
+                    } catch (Throwable t) {
+                        logW("settings launch failed: " + t);
+                    }
+                    return true;
+                }
                 return false;
             }
         });
@@ -248,6 +253,15 @@ public class DisplayActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         settingsParams.leftMargin = 18;
         menuLayout.addView(settingsButton, settingsParams);
+
+        loadingStatusView = new TextView(this);
+        loadingStatusView.setTextColor(0xFF000000);
+        loadingStatusView.setTextSize(14);
+        loadingStatusView.setPadding(8, 0, 8, 0);
+        loadingStatusView.setVisibility(View.GONE);
+        menuLayout.addView(loadingStatusView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -280,10 +294,10 @@ public class DisplayActivity extends Activity {
                 }
                 // Electric-Sign-style: if we slept with WiFi off, turn it on and wait before fetching
                 WifiManager wifi = (WifiManager) a.getSystemService(Context.WIFI_SERVICE);
-                if (ApiPrefs.isAllowSleep(a) && wifi != null && !wifi.isWifiEnabled()
+                        if (ApiPrefs.isAllowSleep(a) && wifi != null && !wifi.isWifiEnabled()
                         && !isConnectedToNetwork(a)) {
                     wifi.setWifiEnabled(true);
-                    scheduleReload(45 * 1000);
+                    a.waitForWifiThenFetch();
                     return;
                 }
                 startFetch();
@@ -300,7 +314,7 @@ public class DisplayActivity extends Activity {
             showGenericImageAndSleep();
         } else if (ensureCredentials()) {
             if (wifiJustOn) {
-                scheduleFetchAfterWifiWarmup();
+                waitForWifiThenFetch();
             } else {
                 startFetch();
             }
@@ -323,7 +337,7 @@ public class DisplayActivity extends Activity {
         } else if (ensureCredentials()) {
             if (!fetchInProgress) {
                 if (wifiJustOn) {
-                    scheduleFetchAfterWifiWarmup();
+                    waitForWifiThenFetch();
                 } else {
                     startFetch();
                 }
@@ -346,6 +360,88 @@ public class DisplayActivity extends Activity {
         };
         refreshHandler.postDelayed(pendingWifiWarmupRunnable, WIFI_WARMUP_MS);
         logD("fetch in " + (WIFI_WARMUP_MS / 1000L) + "s (wifi warming up)");
+    }
+
+    /** Wait for network to come up, then start fetch. Starts as soon as connectivity appears; max wait CONNECTIVITY_MAX_WAIT_MS. */
+    private void waitForWifiThenFetch() {
+        cancelConnectivityWait();
+        if (isConnectedToNetwork(this)) {
+            startFetch();
+            return;
+        }
+        if (menuVisible) {
+            showMenuStatus("Connecting…", false);
+        } else {
+            showWarmupLoadingMessage();
+        }
+        ensureWifiOnWhenForeground();
+        final DisplayActivity a = this;
+        final boolean showErrorInMenu = menuVisible;
+        connectivityReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (!isConnectedToNetwork(context)) return;
+                refreshHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (connectivityReceiver == null) return;
+                        logD("connected, starting fetch");
+                        cancelConnectivityWait();
+                        startFetch();
+                    }
+                });
+            }
+        };
+        try {
+            registerReceiver(connectivityReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+        } catch (Throwable t) {
+            logW("register connectivity receiver: " + t);
+            scheduleFetchAfterWifiWarmup();
+            return;
+        }
+        pendingConnectivityTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                pendingConnectivityTimeoutRunnable = null;
+                logD("connectivity wait timed out");
+                cancelConnectivityWait();
+                if (showErrorInMenu) {
+                    a.showMenuStatus("Couldn't connect. Tap Next to retry.", true);
+                } else {
+                    if (a.contentView != null) a.contentView.setText("Couldn't connect. Tap Next to retry.");
+                    if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
+                    if (a.imageView != null) a.imageView.setVisibility(View.GONE);
+                    if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
+                    a.forceFullRefresh();
+                }
+            }
+        };
+        refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, CONNECTIVITY_MAX_WAIT_MS);
+        logD("waiting for connectivity, fetch as soon as up (max " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s)");
+    }
+
+    private void cancelConnectivityWait() {
+        if (connectivityReceiver != null) {
+            try {
+                unregisterReceiver(connectivityReceiver);
+            } catch (Throwable t) {
+                Log.w(TAG, "unregister connectivityReceiver: " + t);
+            }
+            connectivityReceiver = null;
+        }
+        if (pendingConnectivityTimeoutRunnable != null) {
+            refreshHandler.removeCallbacks(pendingConnectivityTimeoutRunnable);
+            pendingConnectivityTimeoutRunnable = null;
+        }
+    }
+
+    /** Show connecting message when waiting for WiFi; keep dialog clean (no log). */
+    private void showWarmupLoadingMessage() {
+        if (contentView != null) contentView.setText("Connecting…");
+        if (contentScroll != null) contentScroll.setVisibility(View.VISIBLE);
+        if (imageView != null) imageView.setVisibility(View.GONE);
+        if (logView != null) logView.setVisibility(View.GONE);
+        forceFullRefresh();
     }
 
     /** WiFi is only off while sleeping; when app is in foreground, ensure it's on so fetch works.
@@ -399,10 +495,12 @@ public class DisplayActivity extends Activity {
             refreshHandler.removeCallbacks(pendingWifiWarmupRunnable);
             pendingWifiWarmupRunnable = null;
         }
+        cancelConnectivityWait();
     }
 
     @Override
     protected void onDestroy() {
+        cancelConnectivityWait();
         try {
             if (alarmReceiver != null) {
                 unregisterReceiver(alarmReceiver);
@@ -461,11 +559,13 @@ public class DisplayActivity extends Activity {
                 }
                 long sleepMs = refreshMs - SCREENSAVER_DELAY_MS;
                 if (sleepMs < 0) sleepMs = 0;
+                // Wake 45s early so WiFi warmup finishes by the time we want the next image
+                sleepMs = Math.max(0, sleepMs - WIFI_WARMUP_MS);
                 scheduleReload(sleepMs);
                 setKeepScreenAwake(false);
                 WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
                 if (wifi != null) wifi.setWifiEnabled(false);
-                logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (NOOK may blank after its idle, e.g. 2m)");
+                logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (+45s warmup = next image on time; NOOK may blank after idle, e.g. 2m)");
             }
         };
         refreshHandler.postDelayed(pendingSleepRunnable, SCREENSAVER_DELAY_MS);
@@ -597,7 +697,15 @@ public class DisplayActivity extends Activity {
     }
 
     private void startFetch() {
-        ensureWifiOnWhenForeground();
+        // If we're not connected, wait for connectivity then fetch (no fixed 45s).
+        if (ApiPrefs.isAllowSleep(this) && !isConnectedToNetwork(this)) {
+            WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null && !wifi.isWifiEnabled()) {
+                wifi.setWifiEnabled(true);
+            }
+            waitForWifiThenFetch();
+            return;
+        }
         if (!ensureCredentials()) {
             return;
         }
@@ -605,9 +713,25 @@ public class DisplayActivity extends Activity {
             return;
         }
         fetchInProgress = true;
+        fetchStartedFromMenu = menuVisible;
+        appendLogLine("Fetching...");
+        if (menuVisible) {
+            showMenuStatus("Loading...", false);
+        } else {
+            showLoadingMessage();
+        }
         String httpsUrl = ApiPrefs.getApiBaseUrl(this) + API_DISPLAY_PATH;
         logD("start: " + httpsUrl);
         ApiFetchTask.start(this, httpsUrl, ApiPrefs.getApiId(this), ApiPrefs.getApiToken(this));
+    }
+
+    /** Show "Loading..." in content area and hide log so the dialog is clean. */
+    private void showLoadingMessage() {
+        if (contentView != null) contentView.setText("Loading...");
+        if (contentScroll != null) contentScroll.setVisibility(View.VISIBLE);
+        if (imageView != null) imageView.setVisibility(View.GONE);
+        if (logView != null) logView.setVisibility(View.GONE);
+        forceFullRefresh();
     }
 
     private void scheduleRefresh() {
@@ -665,9 +789,40 @@ public class DisplayActivity extends Activity {
 
     private void showMenu() {
         menuVisible = true;
+        showMenuNormal();
         updateMenuBattery();
+        if (nextButton != null) {
+            nextButton.setPressed(false);
+            nextButton.refreshDrawableState();
+        }
         if (menuLayout != null) menuLayout.setVisibility(View.VISIBLE);
         if (menuScrim != null) menuScrim.setVisibility(View.VISIBLE);
+    }
+
+    /** Show status text in the dialog (Loading/Connecting/Error); optionally show Next for retry. Keeps image visible. */
+    private void showMenuStatus(String msg, boolean showNextButton) {
+        if (loadingStatusView != null) {
+            loadingStatusView.setText(msg);
+            loadingStatusView.setVisibility(View.VISIBLE);
+        }
+        if (batteryView != null) batteryView.setVisibility(View.GONE);
+        if (nextButton != null) nextButton.setVisibility(showNextButton ? View.VISIBLE : View.GONE);
+        if (settingsButton != null) settingsButton.setVisibility(View.GONE);
+        if (menuLayout != null && menuScrim != null) {
+            menuLayout.setVisibility(View.VISIBLE);
+            menuScrim.setVisibility(View.VISIBLE);
+        }
+        menuVisible = true;
+        forceFullRefresh();
+    }
+
+    /** Restore dialog to Battery / Next / Settings. */
+    private void showMenuNormal() {
+        if (loadingStatusView != null) loadingStatusView.setVisibility(View.GONE);
+        if (batteryView != null) batteryView.setVisibility(View.VISIBLE);
+        if (nextButton != null) nextButton.setVisibility(View.VISIBLE);
+        if (settingsButton != null) settingsButton.setVisibility(View.VISIBLE);
+        forceFullRefresh();
     }
 
     private void hideMenu() {
@@ -770,21 +925,12 @@ public class DisplayActivity extends Activity {
 
     private void logD(final String msg) {
         Log.d(TAG, msg);
-        // Also show on-screen (in case logcat filters hide it).
-        runOnUiThread(new Runnable() {
-            public void run() {
-                appendLogLine("D " + msg);
-            }
-        });
+        // On-screen log shows only "Fetching..." and errors (logE).
     }
 
     private void logW(final String msg) {
         Log.w(TAG, msg);
-        runOnUiThread(new Runnable() {
-            public void run() {
-                appendLogLine("W " + msg);
-            }
-        });
+        // On-screen log shows only "Fetching..." and errors (logE).
     }
 
     private void logE(final String msg, final Throwable t) {
@@ -955,6 +1101,8 @@ public class DisplayActivity extends Activity {
             if (a == null || a.contentView == null) return;
 
             a.fetchInProgress = false;
+            final boolean fromMenu = a.fetchStartedFromMenu;
+            a.fetchStartedFromMenu = false;
             if (result instanceof ApiResult) {
                 ApiResult ar = (ApiResult) result;
                 if (ar.showImage && ar.bitmap != null) {
@@ -969,6 +1117,7 @@ public class DisplayActivity extends Activity {
                     if (a.logView != null) {
                         a.logView.setVisibility(View.GONE);
                     }
+                    a.hideMenu();
                     if (ar.imageUrl != null) {
                         a.logD("image url: " + ar.imageUrl);
                     }
@@ -988,15 +1137,13 @@ public class DisplayActivity extends Activity {
                 }
 
                 String text = ar.rawText != null ? ar.rawText : "Error: null result";
-                a.contentView.setText(text);
-                if (a.contentScroll != null) {
-                    a.contentScroll.setVisibility(View.VISIBLE);
-                }
-                if (a.imageView != null) {
-                    a.imageView.setVisibility(View.GONE);
-                }
-                if (a.logView != null) {
-                    a.logView.setVisibility(View.VISIBLE);
+                if (fromMenu) {
+                    a.showMenuStatus(text.length() > 80 ? text.substring(0, 77) + "…" : text, true);
+                } else {
+                    a.contentView.setText(text);
+                    if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
+                    if (a.imageView != null) a.imageView.setVisibility(View.GONE);
+                    if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
                 }
                 a.forceFullRefresh();
                 a.logD("response body:\n" + text);
@@ -1010,10 +1157,14 @@ public class DisplayActivity extends Activity {
             }
 
             String text = result != null ? result.toString() : "Error: null result";
-            a.contentView.setText(text);
-            if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
-            if (a.imageView != null) a.imageView.setVisibility(View.GONE);
-            if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
+            if (fromMenu) {
+                a.showMenuStatus(text.length() > 80 ? text.substring(0, 77) + "…" : text, true);
+            } else {
+                a.contentView.setText(text);
+                if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
+                if (a.imageView != null) a.imageView.setVisibility(View.GONE);
+                if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
+            }
             a.forceFullRefresh();
             a.logD("fetch error: " + text);
             a.logD("next display in " + (a.refreshMs / 1000L) + "s");
