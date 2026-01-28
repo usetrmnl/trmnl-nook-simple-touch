@@ -10,9 +10,7 @@ public class ApiPrefs {
     private static final String KEY_API_BASE_URL = "api_base_url";
     private static final String DEFAULT_API_BASE_URL = "https://usetrmnl.com/api";
     private static final String KEY_ALLOW_SLEEP = "allow_sleep";
-    private static final String KEY_WRITE_SCREENSAVER = "write_screensaver";
-    private static final String KEY_SCREENSAVER_PATH = "screensaver_path";
-    private static final String DEFAULT_SCREENSAVER_PATH = "/media/screensavers/TRMNL/display.png";
+    private static final String SCREENSAVER_PATH = "/media/screensavers/TRMNL/display.png";
 
     public static boolean hasCredentials(Context context) {
         return getApiId(context) != null && getApiToken(context) != null;
@@ -100,28 +98,8 @@ public class ApiPrefs {
                 .putBoolean(KEY_ALLOW_SLEEP, allow).commit();
     }
 
-    /** Whether to write the current image to the screensaver file so it shows while asleep. Default true. */
-    public static boolean isWriteScreensaver(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_WRITE_SCREENSAVER, true);
-    }
-
-    public static void setWriteScreensaver(Context context, boolean write) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                .putBoolean(KEY_WRITE_SCREENSAVER, write).commit();
-    }
-
-    /** File path for screensaver image (e.g. NOOK uses this while device is asleep). */
-    public static String getScreensaverPath(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String v = prefs.getString(KEY_SCREENSAVER_PATH, null);
-        if (v == null || v.trim().length() == 0) return DEFAULT_SCREENSAVER_PATH;
-        return v.trim();
-    }
-
-    public static void setScreensaverPath(Context context, String path) {
-        String value = path != null ? path.trim() : "";
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                .putString(KEY_SCREENSAVER_PATH, value.length() > 0 ? value : DEFAULT_SCREENSAVER_PATH).commit();
+    /** File path for screensaver image (hardcoded for NOOK). */
+    public static String getScreensaverPath() {
+        return SCREENSAVER_PATH;
     }
 }

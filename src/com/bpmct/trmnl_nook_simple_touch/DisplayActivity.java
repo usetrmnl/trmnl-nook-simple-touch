@@ -581,12 +581,11 @@ public class DisplayActivity extends Activity {
             public void run() {
                 pendingSleepRunnable = null;
                 if (!ApiPrefs.isAllowSleep(DisplayActivity.this)) return;
-                if (ApiPrefs.isWriteScreensaver(DisplayActivity.this)) {
-                    if (lastDisplayedImage != null) {
-                        writeScreenshotToScreensaver(lastDisplayedImage);
-                    } else {
-                        writeGenericScreensaver();
-                    }
+                // Write screensaver so NOOK shows our image while asleep
+                if (lastDisplayedImage != null) {
+                    writeScreenshotToScreensaver(lastDisplayedImage);
+                } else {
+                    writeGenericScreensaver();
                 }
                 long sleepMs = refreshMs - SCREENSAVER_DELAY_MS;
                 if (sleepMs < 0) sleepMs = 0;
@@ -623,9 +622,7 @@ public class DisplayActivity extends Activity {
         logD("displayed generic image");
         logD("next display in " + (refreshMs / 1000L) + "s");
         if (ApiPrefs.isAllowSleep(this)) {
-            if (ApiPrefs.isWriteScreensaver(this)) {
-                writeScreenshotToScreensaver(bitmap);
-            }
+            writeScreenshotToScreensaver(bitmap);
             scheduleReload(refreshMs);
             setKeepScreenAwake(false);
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
@@ -656,11 +653,10 @@ public class DisplayActivity extends Activity {
         if (b != null) writeScreenshotToScreensaver(b);
     }
 
-    /** Write given bitmap to screensaver path so NOOK can show it while asleep. */
+    /** Write given bitmap to screensaver path so NOOK shows it while asleep. */
     private void writeScreenshotToScreensaver(Bitmap bitmap) {
         if (bitmap == null) return;
-        if (!ApiPrefs.isWriteScreensaver(this)) return;
-        String path = ApiPrefs.getScreensaverPath(this);
+        String path = ApiPrefs.getScreensaverPath();
         if (path == null || path.length() == 0) return;
         String dirPath = path;
         int lastSlash = dirPath.lastIndexOf('/');
