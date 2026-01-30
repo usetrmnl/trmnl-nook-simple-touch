@@ -25,8 +25,8 @@ I'd love to work with the TRMNL team to combine these repositories, but a lot of
 ## Install
 - Download the APK from [GitHub Releases](https://github.com/bpmct/trmnl-nook-simple-touch/releases).
 - Connect the Nook Simple Touch over USB and copy the APK over.
-- Open the included "ES File Explorer" app.
-- `In ES File Explorer: Favorites -> "/" -> "media" -> "My Files".`
+- Open the included `ES File Explorer` app.
+- In ES File Explorer: `Favorites -> "/" -> "media" -> "My Files".`
 - Tap the APK and install.
 - Connect your device to WiFi
 - Open the app and configure the device info
@@ -65,8 +65,8 @@ Power savings come from WiFi being off during sleep, the device entering true ha
 Deep sleep is not enabled by default. To set it up:
 
 1. **TRMNL app settings** — Enable "Allow Sleep" and "Write Screensaver"
-2. **Nook display settings** — Settings → Display → Screen timeout: 2 minutes, then set Screensaver to "TRMNL"
-3. **Hide screensaver banner** — In Nook apps: Nook Touch Mod → Configure Mod Options → Hide screensaver banner
+2. **Nook display settings** — `Settings → Display → Screen timeout`: 2 minutes, then set Screensaver to "TRMNL"
+3. **Hide screensaver banner** — In Nook apps: `Nook Touch Mod → Configure Mod Options`: Hide screensaver banner
 
 ## Roadmap
 - [ ] Rubber cleaning and mounting options (https://github.com/bpmct/trmnl-nook-simple-touch/issues/11)
