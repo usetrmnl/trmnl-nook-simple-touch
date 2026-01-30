@@ -42,11 +42,34 @@ In the TRMNL Device settings, set the device type to "Amazon Kindle 7" (800x600)
 - TLS v1.2 via BouncyCastle (not included in Android 2.1)
 - BYOD support for TRMNL and custom server URLs
 - Reports battery voltage and Wi-Fi signal strength
+- Deep sleep mode for 30+ day battery life
+
+## Deep Sleep Mode
+
+Without deep sleep, expect ~60 hours of battery life. With deep sleep enabled and a 30-minute [refresh rate in TRMNL](https://help.trmnl.com/en/articles/10113695-how-refresh-rates-work#h_854b46ae51), battery lasts upwards of 30 days (~0.125% drain per hour).
+
+### How it works
+
+When deep sleep is enabled, the app follows this cycle:
+
+1. **Display** — Shows fetched image for 5 seconds
+2. **Screensaver write** — Copies the image to the NOOK's screensaver path
+3. **Sleep** — Disables keep-screen-awake, turns off WiFi, sets RTC wake alarm
+4. **NOOK sleeps** — After screen timeout (2 min), device enters deep sleep showing the screensaver
+5. **Wake** — Alarm fires, WiFi reconnects, fetches next image, repeat
+
+Power savings come from WiFi being off during sleep, the device entering true hardware sleep between refreshes, and e-ink displays consuming no power to maintain an image—only to update it. I haven't tested refresh intervals longer than 30 minutes, but battery life should improve further with less frequent updates.
+
+Note: The "alarm" is a silent RTC wake event—no sound or vibration, just a signal to wake the CPU.
+
+### Configuration
+
+1. **TRMNL app settings** — Enable "Allow Sleep" and "Write Screensaver"
+2. **Nook display settings** — Settings → Display → Screen timeout: 2 minutes, then set Screensaver to "TRMNL"
+3. **Hide screensaver banner** — In Nook apps: Nook Touch Mod → Configure Mod Options → Hide screensaver banner
 
 ## Roadmap
-- [ ] Document battery life expectations on new and old devices (https://github.com/bpmct/trmnl-nook-simple-touch/issues/9)
 - [ ] Rubber cleaning and mounting options (https://github.com/bpmct/trmnl-nook-simple-touch/issues/11)
-- [ ] Use device deep sleep to save battery (https://github.com/bpmct/trmnl-nook-simple-touch/issues/7)
 - [ ] Test on the Glowlight BNRV350 (https://github.com/bpmct/trmnl-nook-simple-touch/issues/6)
 
 ## Development
