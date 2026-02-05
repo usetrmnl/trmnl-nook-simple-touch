@@ -4,10 +4,12 @@ set -e
 # Symlink untracked files from main repo for worktrees
 MAIN_REPO="/home/benpotter/workspace/trmnl-nook-simple-touch"
 
-if [ -f "$MAIN_REPO/local.properties" ]; then
-    ln -sf "$MAIN_REPO/local.properties" local.properties
-    echo "Linked local.properties"
-fi
+for props in local.properties project.properties; do
+    if [ -f "$MAIN_REPO/$props" ]; then
+        ln -sf "$MAIN_REPO/$props" "$props"
+        echo "Linked $props"
+    fi
+done
 
 for jar in "$MAIN_REPO"/libs/*.jar; do
     if [ -f "$jar" ]; then

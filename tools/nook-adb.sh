@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source SDKMAN if available (for Java 8)
+if [[ -f "${HOME}/.sdkman/bin/sdkman-init.sh" ]]; then
+  set +u
+  source "${HOME}/.sdkman/bin/sdkman-init.sh"
+  set -u
+fi
+
 # NOOK Simple Touch helper for ADB-over-TCP workflows.
 #
 # Usage examples:

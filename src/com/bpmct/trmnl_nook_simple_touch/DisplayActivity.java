@@ -17,6 +17,8 @@ import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.PowerManager;
 import android.os.SystemClock;
+
+// Local helper for parsing TRMNL API responses + downloading images.
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -37,13 +39,8 @@ import java.util.Hashtable;
 import java.util.Locale;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLDecoder;
-
-import org.json.JSONObject;
-
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Matrix;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -319,6 +316,10 @@ public class DisplayActivity extends Activity {
                     showGenericImageAndSleep();
                     return;
                 }
+                if (fetchInProgress) {
+                    logD("alarm: fetch already in progress, skipping");
+                    return;
+                }
                 // Electric-Sign-style: if we slept with WiFi off, turn it on and wait before fetching
                 WifiManager wifi = (WifiManager) a.getSystemService(Context.WIFI_SERVICE);
                         if (ApiPrefs.isAllowSleep(a) && wifi != null && !wifi.isWifiEnabled()
@@ -369,7 +370,7 @@ public class DisplayActivity extends Activity {
                     startFetch();
                 }
             }
-            scheduleRefresh();
+            // Don't schedule here - fetch completion will schedule the next refresh
         }
     }
 
@@ -560,6 +561,15 @@ public class DisplayActivity extends Activity {
     }
 
     /** Schedule alarm to wake and trigger next fetch at (now + millis). */
+    /** Schedule the next fetch cycle based on allow-sleep setting. */
+    private void scheduleNextCycle() {
+        if (ApiPrefs.isAllowSleep(this)) {
+            scheduleScreensaverThenSleep();
+        } else {
+            scheduleRefresh();
+        }
+    }
+
     private long scheduleReload(long millis) {
         if (alarmManager == null || alarmPendingIntent == null) return 0;
         Calendar cal = Calendar.getInstance();
@@ -807,6 +817,11 @@ public class DisplayActivity extends Activity {
     }
     
     /** Hide boot screen and show normal content */
+
+    /** Hide the boot header layout even after bootComplete (used when UI overlaps). */
+    private void hideBootLayout() {
+        if (bootLayout != null) bootLayout.setVisibility(View.GONE);
+    }
     private void hideBootScreen() {
         if (bootComplete) return;
         bootComplete = true;
@@ -841,6 +856,8 @@ public class DisplayActivity extends Activity {
 
     /** Show status text in the dialog (Loading/Connecting/Error); optionally show Next for retry. Keeps image visible. */
     private void showMenuStatus(String msg, boolean showNextButton) {
+        // Hide boot screen when showing menu status
+        hideBootLayout();
         if (loadingStatusView != null) {
             loadingStatusView.setText(msg);
             loadingStatusView.setVisibility(View.VISIBLE);
@@ -1038,7 +1055,29 @@ public class DisplayActivity extends Activity {
                             httpsUrl,
                             headers);
                     if (bcResult != null && !bcResult.startsWith("Error:")) {
-                        ApiResult parsed = (a != null) ? a.parseResponseAndMaybeFetchImage(bcResult) : null;
+                        ApiResult parsed = null;
+                        if (a != null) {
+                            final DisplayActivity aFinal = a;
+                            TrmnlApiResponseParser.Result r = TrmnlApiResponseParser.parseAndMaybeFetchImage(
+                                    aFinal.getApplicationContext(),
+                                    bcResult,
+                                    new TrmnlApiResponseParser.Logger() {
+                                        public void logD(String msg) { aFinal.logD(msg); }
+                                        public void logW(String msg) { aFinal.logW(msg); }
+                                    });
+                            if (r != null && r.showImage && r.bitmap != null) {
+                                if (r.refreshRateSeconds > 0) {
+                                    a.updateRefreshRateSeconds(r.refreshRateSeconds);
+                                }
+                                parsed = new ApiResult(r.rawText, r.imageUrl, r.bitmap);
+                            } else {
+                                // Preserve previous behavior: still allow refresh rate update even if no image
+                                if (r != null && r.refreshRateSeconds > 0) {
+                                    a.updateRefreshRateSeconds(r.refreshRateSeconds);
+                                }
+                                parsed = new ApiResult(bcResult);
+                            }
+                        }
                         return (parsed != null) ? parsed : new ApiResult(bcResult);
                     }
                 }
@@ -1162,6 +1201,8 @@ public class DisplayActivity extends Activity {
                     a.hideBootScreen();
                     a.imageView.setImageBitmap(ar.bitmap);
                     a.lastDisplayedImage = ar.bitmap;
+                    // Always write screensaver immediately so TRMNL appears in NOOK's screensaver list
+                    a.writeScreenshotToScreensaver(ar.bitmap);
                     a.imageView.setVisibility(View.VISIBLE);
                     if (a.contentScroll != null) {
                         a.contentScroll.setVisibility(View.GONE);
@@ -1176,11 +1217,7 @@ public class DisplayActivity extends Activity {
                     a.forceFullRefresh();
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                    if (ApiPrefs.isAllowSleep(a)) {
-                        a.scheduleScreensaverThenSleep();
-                    } else {
-                        a.scheduleRefresh();
-                    }
+                    a.scheduleNextCycle();
                     float v = getBatteryVoltage(a);
                     if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
                     int rssi = getWifiRssi(a);
@@ -1188,23 +1225,24 @@ public class DisplayActivity extends Activity {
                     return;
                 }
 
+                // Got API response but no image - show error and schedule retry
                 String text = ar.rawText != null ? ar.rawText : "Error: null result";
-                if (fromMenu) {
-                    a.showMenuStatus(text.length() > 80 ? text.substring(0, 77) + "…" : text, true);
-                } else {
-                    a.contentView.setText(text);
-                    if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
-                    if (a.imageView != null) a.imageView.setVisibility(View.GONE);
-                    if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
-                }
-                a.forceFullRefresh();
                 a.logD("response body:\n" + text);
-                a.logD("displayed response");
-                a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                float v = getBatteryVoltage(a);
-                if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
-                int rssi = getWifiRssi(a);
-                if (rssi != -999) a.logD("rssi: " + rssi);
+                a.logD("no image in response, will retry");
+                if (fromMenu) {
+                    // User tapped Next - show error in menu dialog, let them retry
+                    a.showMenuStatus("No image - tap Next to retry", true);
+                    a.forceFullRefresh();
+                } else {
+                    // Background fetch - keep current display, just schedule retry
+                    a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+                }
+                // Schedule next refresh (keep trying)
+                if (ApiPrefs.isAllowSleep(a)) {
+                    a.scheduleScreensaverThenSleep();
+                } else {
+                    a.scheduleRefresh();
+                }
                 return;
             }
 
@@ -1220,6 +1258,8 @@ public class DisplayActivity extends Activity {
             a.forceFullRefresh();
             a.logD("fetch error: " + text);
             a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+            // Schedule next refresh even on error (keep trying)
+            a.scheduleNextCycle();
             float v = getBatteryVoltage(a);
             if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
             int rssi = getWifiRssi(a);
@@ -1245,80 +1285,6 @@ public class DisplayActivity extends Activity {
             this.showImage = true;
             this.bitmap = bitmap;
             this.imageUrl = imageUrl;
-        }
-    }
-
-    private ApiResult parseResponseAndMaybeFetchImage(String jsonText) {
-        try {
-            JSONObject obj = new JSONObject(jsonText);
-            int status = obj.optInt("status", -1);
-            // API returns 0 for display
-            if (status != 0 && status != 200) {
-                return new ApiResult(jsonText);
-            }
-            logD("api status: " + status);
-
-            int refreshRateSeconds = obj.optInt("refresh_rate", -1);
-            if (refreshRateSeconds > 0) {
-                updateRefreshRateSeconds(refreshRateSeconds);
-            }
-
-            String imageUrl = obj.optString("image_url", null);
-            if (imageUrl == null || imageUrl.length() == 0) {
-                return new ApiResult(jsonText);
-            }
-            logD("api image_url: " + imageUrl);
-
-            // Log a decoded URL for readability, but use the encoded URL for fetch.
-            try {
-                String decoded = URLDecoder.decode(imageUrl, "UTF-8");
-                logD("decoded image url: " + decoded);
-            } catch (Throwable ignored) {
-            }
-
-            Hashtable headers = buildImageHeaders();
-            byte[] imageBytes = null;
-            for (int attempt = 1; attempt <= 2; attempt++) {
-                if (attempt > 1) {
-                    logW("Image fetch attempt " + (attempt-1) + " failed - retrying in 3s");
-                    try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
-                }
-                imageBytes = BouncyCastleHttpClient.getHttpsBytes(
-                        getApplicationContext(),
-                        imageUrl,
-                        headers);
-                if (imageBytes != null && imageBytes.length > 0) break;
-            }
-            if (imageBytes == null || imageBytes.length == 0) {
-                logW("image fetch failed after retries for url: " + imageUrl);
-                return new ApiResult("Error: Failed to download image from " + imageUrl);
-            }
-            logD("image bytes: " + imageBytes.length);
-
-            Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
-            if (bitmap == null) {
-                logW("image decode failed");
-                return new ApiResult(jsonText);
-            }
-            if (imageUrl.endsWith("/empty_state.bmp")) {
-                bitmap = rotate90(bitmap);
-            }
-            return new ApiResult(jsonText, imageUrl, bitmap);
-        } catch (Throwable t) {
-            logW("response parse failed: " + t);
-            return new ApiResult(jsonText);
-        }
-    }
-
-    private Bitmap rotate90(Bitmap src) {
-        try {
-            Matrix m = new Matrix();
-            m.postRotate(90f);
-            return Bitmap.createBitmap(
-                    src, 0, 0, src.getWidth(), src.getHeight(), m, true);
-        } catch (Throwable t) {
-            logW("image rotate failed: " + t);
-            return src;
         }
     }
 
