@@ -845,6 +845,8 @@ public class DisplayActivity extends Activity {
 
     /** Show status text in the dialog (Loading/Connecting/Error); optionally show Next for retry. Keeps image visible. */
     private void showMenuStatus(String msg, boolean showNextButton) {
+        // Hide boot screen when showing menu status
+        if (bootLayout != null) bootLayout.setVisibility(View.GONE);
         if (loadingStatusView != null) {
             loadingStatusView.setText(msg);
             loadingStatusView.setVisibility(View.VISIBLE);
@@ -1194,30 +1196,24 @@ public class DisplayActivity extends Activity {
                     return;
                 }
 
+                // Got API response but no image - show error and schedule retry
                 String text = ar.rawText != null ? ar.rawText : "Error: null result";
-                if (fromMenu) {
-                    a.showMenuStatus(text.length() > 80 ? text.substring(0, 77) + "…" : text, true);
-                } else {
-                    a.contentView.setText(text);
-                    if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
-                    if (a.imageView != null) a.imageView.setVisibility(View.GONE);
-                    if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
-                }
-                a.hideBootScreen();
-                a.forceFullRefresh();
                 a.logD("response body:\n" + text);
-                a.logD("displayed response (no image)");
-                a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                // Schedule next refresh even when no image (keep trying)
+                a.logD("no image in response, will retry");
+                if (fromMenu) {
+                    // User tapped Next - show error in menu dialog, let them retry
+                    a.showMenuStatus("No image - tap Next to retry", true);
+                    a.forceFullRefresh();
+                } else {
+                    // Background fetch - keep current display, just schedule retry
+                    a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+                }
+                // Schedule next refresh (keep trying)
                 if (ApiPrefs.isAllowSleep(a)) {
                     a.scheduleScreensaverThenSleep();
                 } else {
                     a.scheduleRefresh();
                 }
-                float v = getBatteryVoltage(a);
-                if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
-                int rssi = getWifiRssi(a);
-                if (rssi != -999) a.logD("rssi: " + rssi);
                 return;
             }
 
