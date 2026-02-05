@@ -564,6 +564,15 @@ public class DisplayActivity extends Activity {
     }
 
     /** Schedule alarm to wake and trigger next fetch at (now + millis). */
+    /** Schedule the next fetch cycle based on allow-sleep setting. */
+    private void scheduleNextCycle() {
+        if (ApiPrefs.isAllowSleep(this)) {
+            scheduleScreensaverThenSleep();
+        } else {
+            scheduleRefresh();
+        }
+    }
+
     private long scheduleReload(long millis) {
         if (alarmManager == null || alarmPendingIntent == null) return 0;
         Calendar cal = Calendar.getInstance();
@@ -811,6 +820,11 @@ public class DisplayActivity extends Activity {
     }
     
     /** Hide boot screen and show normal content */
+
+    /** Hide the boot header layout even after bootComplete (used when UI overlaps). */
+    private void hideBootLayout() {
+        if (bootLayout != null) bootLayout.setVisibility(View.GONE);
+    }
     private void hideBootScreen() {
         if (bootComplete) return;
         bootComplete = true;
@@ -846,7 +860,7 @@ public class DisplayActivity extends Activity {
     /** Show status text in the dialog (Loading/Connecting/Error); optionally show Next for retry. Keeps image visible. */
     private void showMenuStatus(String msg, boolean showNextButton) {
         // Hide boot screen when showing menu status
-        if (bootLayout != null) bootLayout.setVisibility(View.GONE);
+        hideBootLayout();
         if (loadingStatusView != null) {
             loadingStatusView.setText(msg);
             loadingStatusView.setVisibility(View.VISIBLE);
@@ -1184,11 +1198,7 @@ public class DisplayActivity extends Activity {
                     a.forceFullRefresh();
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                    if (ApiPrefs.isAllowSleep(a)) {
-                        a.scheduleScreensaverThenSleep();
-                    } else {
-                        a.scheduleRefresh();
-                    }
+                    a.scheduleNextCycle();
                     float v = getBatteryVoltage(a);
                     if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
                     int rssi = getWifiRssi(a);
@@ -1230,11 +1240,7 @@ public class DisplayActivity extends Activity {
             a.logD("fetch error: " + text);
             a.logD("next display in " + (a.refreshMs / 1000L) + "s");
             // Schedule next refresh even on error (keep trying)
-            if (ApiPrefs.isAllowSleep(a)) {
-                a.scheduleScreensaverThenSleep();
-            } else {
-                a.scheduleRefresh();
-            }
+            a.scheduleNextCycle();
             float v = getBatteryVoltage(a);
             if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
             int rssi = getWifiRssi(a);
