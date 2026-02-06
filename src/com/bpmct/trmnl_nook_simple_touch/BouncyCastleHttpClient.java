@@ -63,6 +63,54 @@ public class BouncyCastleHttpClient {
     private static final boolean bcAvailable = true;
     private static X509TrustManager trustManager = null;
 
+    /** Log request/response details, omitting sensitive headers */
+    private static void logRequest(String method, String url, Hashtable headers) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("REQUEST: ").append(method).append(" ").append(url);
+        if (headers != null) {
+            sb.append(" headers={");
+            java.util.Enumeration keys = headers.keys();
+            boolean first = true;
+            while (keys.hasMoreElements()) {
+                String k = (String) keys.nextElement();
+                String kLower = k.toLowerCase();
+                // Omit sensitive headers
+                if (kLower.equals("id") || kLower.equals("access-token") || kLower.contains("api") || kLower.contains("key") || kLower.contains("token")) {
+                    continue;
+                }
+                if (!first) sb.append(", ");
+                first = false;
+                sb.append(k).append("=").append(headers.get(k));
+            }
+            sb.append("}");
+        }
+        Log.d(TAG, sb.toString());
+        FileLogger.d(TAG, sb.toString());
+    }
+
+    private static void logResponse(String url, int statusCode, String reason, int bodyLen, String body) {
+        String msg = "RESPONSE: " + url + " -> " + statusCode + " " + reason + " (" + bodyLen + " bytes)";
+        Log.d(TAG, msg);
+        FileLogger.d(TAG, msg);
+        if (body != null && body.length() > 0) {
+            // Truncate body for logging (max 2KB)
+            String bodyLog = body.length() > 2048 ? body.substring(0, 2048) + "...[truncated]" : body;
+            FileLogger.d(TAG, "RESPONSE BODY: " + bodyLog);
+        }
+    }
+
+    private static void logResponseBytes(String url, int statusCode, String reason, int bodyLen) {
+        String msg = "RESPONSE: " + url + " -> " + statusCode + " " + reason + " (" + bodyLen + " bytes, binary)";
+        Log.d(TAG, msg);
+        FileLogger.d(TAG, msg);
+    }
+
+    private static void logResponseError(String url, String error) {
+        String msg = "RESPONSE ERROR: " + url + " -> " + error;
+        Log.w(TAG, msg);
+        FileLogger.w(TAG, msg);
+    }
+
     public static boolean isAvailable() {
         return bcAvailable;
     }
@@ -157,6 +205,7 @@ public class BouncyCastleHttpClient {
             InputStream tlsIn = tlsProtocol.getInputStream();
             
             // Send HTTP request
+            logRequest("GET", url, headers);
             PrintWriter writer = new PrintWriter(tlsOut, true);
             writer.print("GET " + path + " HTTP/1.1\r\n");
             writeHeaders(writer, headers, host);
@@ -166,6 +215,7 @@ public class BouncyCastleHttpClient {
             // Read HTTP response
             String statusLine = readAsciiLine(tlsIn);
             if (statusLine == null) {
+                logResponseError(url, "No response from server");
                 return "Error: No response from server";
             }
             
@@ -253,9 +303,11 @@ public class BouncyCastleHttpClient {
             String body = new String(bodyBytes.toByteArray(), "UTF-8");
             
             if (statusCode >= 200 && statusCode < 300) {
+                logResponse(url, statusCode, "OK", body.length(), body);
                 Log.d(TAG, "BC got " + body.length() + " chars");
                 return body;
             } else {
+                logResponseError(url, "HTTP " + statusCode);
                 return "Error: HTTP " + statusCode + " " + body;
             }
             
@@ -302,6 +354,7 @@ public class BouncyCastleHttpClient {
             OutputStream tlsOut = tlsProtocol.getOutputStream();
             InputStream tlsIn = tlsProtocol.getInputStream();
 
+            logRequest("GET", url, headers);
             PrintWriter writer = new PrintWriter(tlsOut, true);
             writer.print("GET " + path + " HTTP/1.1\r\n");
             writeHeaders(writer, headers, host);
@@ -310,6 +363,7 @@ public class BouncyCastleHttpClient {
 
             String statusLine = readAsciiLine(tlsIn);
             if (statusLine == null) {
+                logResponseError(url, "No response from server (bytes)");
                 Log.e(TAG, "BC bytes: no response from server");
                 return null;
             }
@@ -338,6 +392,7 @@ public class BouncyCastleHttpClient {
             }
 
             if (statusCode < 200 || statusCode >= 300) {
+                logResponseError(url, "HTTP " + statusCode + " (bytes)");
                 Log.e(TAG, "BC bytes: HTTP " + statusCode);
                 return null;
             }
@@ -360,7 +415,9 @@ public class BouncyCastleHttpClient {
                 }
             }
 
-            return baos.toByteArray();
+            byte[] result = baos.toByteArray();
+            logResponseBytes(url, statusCode, "OK", result.length);
+            return result;
         } finally {
             try {
                 socket.close();

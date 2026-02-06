@@ -59,9 +59,19 @@ Fix:
 ## Helper scripts
 
 - `tools/nook-adb.sh` supports:
-  - `install-run-logcat` (uses existing APK, no Ant)
-  - `build-install-run-logcat` (Ant build, install, run, logcat)
+  - `connect` - connect to NOOK via ADB-over-TCP
+  - `install --apk <path>` - install APK
+  - `build-install-run` - Ant build, install, launch app
+  - `logcat` - stream filtered logcat
+  - `shell` - open adb shell
 - Use `--adb`, `--ant`, and `--logcat-filter` overrides as needed.
+
+## Worktree setup
+
+When working in a git worktree, you need:
+1. `local.properties` - copy from another worktree or create with:
+   `sdk.dir=/home/benpotter/Downloads/adt-bundle-linux-x86_64-20140702/adt-bundle-linux-x86_64-20140702/sdk`
+2. SpongyCastle JARs in `libs/` - copy from another worktree or download per `libs/README_SPONGYCASTLE.md`
 
 ## Release flow
 

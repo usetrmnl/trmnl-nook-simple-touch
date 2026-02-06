@@ -996,11 +996,13 @@ public class DisplayActivity extends Activity {
 
     private void logD(final String msg) {
         Log.d(TAG, msg);
+        FileLogger.d(TAG, msg);
         if (!bootComplete) logToScreen(msg);
     }
 
     private void logW(final String msg) {
         Log.w(TAG, msg);
+        FileLogger.w(TAG, msg);
         if (!bootComplete) logToScreen("W " + msg);
     }
     
@@ -1012,6 +1014,7 @@ public class DisplayActivity extends Activity {
 
     private void logE(final String msg, final Throwable t) {
         Log.e(TAG, msg, t);
+        FileLogger.e(TAG, msg, t);
         runOnUiThread(new Runnable() {
             public void run() {
                 appendLogLine("E " + msg + (t != null ? (": " + t.toString()) : ""));
