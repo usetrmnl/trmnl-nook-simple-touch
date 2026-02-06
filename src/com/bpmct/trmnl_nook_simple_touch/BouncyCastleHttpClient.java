@@ -155,6 +155,9 @@ public class BouncyCastleHttpClient {
             return getHttpsBytesImpl(context, url, headers);
         } catch (Throwable t) {
             Log.e(TAG, "BouncyCastle HTTPS bytes failed", t);
+            String errorMsg = t.getClass().getSimpleName();
+            if (t.getMessage() != null) errorMsg += ": " + t.getMessage();
+            logResponseError(url, errorMsg + " (bytes)");
             return null;
         }
     }

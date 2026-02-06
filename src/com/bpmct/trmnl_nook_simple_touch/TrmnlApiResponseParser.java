@@ -80,8 +80,8 @@ final class TrmnlApiResponseParser {
             byte[] imageBytes = null;
             for (int attempt = 1; attempt <= 2; attempt++) {
                 if (attempt > 1) {
-                    if (log != null) log.logW("Image fetch attempt " + (attempt - 1) + " failed - retrying in 3s");
-                    try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+                    if (log != null) log.logW("Image fetch attempt " + (attempt - 1) + " failed - retrying in 5s");
+                    try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
                 }
                 imageBytes = BouncyCastleHttpClient.getHttpsBytes(ctx, imageUrl, headers);
                 if (imageBytes != null && imageBytes.length > 0) break;

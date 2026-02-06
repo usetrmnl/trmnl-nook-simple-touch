@@ -898,7 +898,7 @@ public class DisplayActivity extends Activity {
         if (batteryView != null) batteryView.setVisibility(View.VISIBLE);
         if (nextButton != null) nextButton.setVisibility(View.VISIBLE);
         if (settingsButton != null) settingsButton.setVisibility(View.VISIBLE);
-        forceFullRefresh();
+        // No forceFullRefresh here - opening menu doesn't need e-ink flash
     }
 
     private void hideMenu() {
@@ -919,8 +919,6 @@ public class DisplayActivity extends Activity {
     }
 
     private void forceFullRefresh() {
-        triggerEpdRefresh();
-        
         if (imageRotateLayout != null) {
             imageRotateLayout.requestLayout();
             imageRotateLayout.invalidate();
@@ -932,12 +930,14 @@ public class DisplayActivity extends Activity {
         if (root == null) return;
         root.invalidate();
         root.requestLayout();
+        // Trigger EPD refresh AFTER content is in framebuffer
         root.postDelayed(new Runnable() {
             public void run() {
                 View r = getWindow().getDecorView();
                 if (r != null) r.invalidate();
+                triggerEpdRefresh();
             }
-        }, 40);
+        }, 100);
     }
     
     /** Trigger NOOK Simple Touch hardware e-ink refresh via sysfs. */
@@ -1082,8 +1082,8 @@ public class DisplayActivity extends Activity {
                 String bcResult = null;
                 for (int attempt = 1; attempt <= 2; attempt++) {
                     if (attempt > 1) {
-                        if (a != null) a.logW("Attempt " + (attempt-1) + " failed: " + bcResult + " - retrying in 3s");
-                        try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+                        if (a != null) a.logW("Attempt " + (attempt-1) + " failed: " + bcResult + " - retrying in 5s");
+                        try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
                         if (a != null) a.logD("Retrying fetch...");
                     }
                     bcResult = BouncyCastleHttpClient.getHttps(
