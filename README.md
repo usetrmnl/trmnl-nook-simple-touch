@@ -22,6 +22,7 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 - [Frames and Cases](#frames-and-cases)
 - [Gift Mode](#gift-mode)
 - [Roadmap](#roadmap)
+- [Other Nook Models](#other-nook-models)
 - [Development](#development)
 - [Disclaimer](#disclaimer)
 
@@ -92,7 +93,9 @@ See the CI workflow for build details ([`build-apk.yml`](https://github.com/bpmc
 
 ## Other Nook Models
 
-For newer Nook devices like the Nook Glowlight 4, see [trmnl-nook](https://github.com/usetrmnl/trmnl-nook).
+This repository targets legacy Nook devices running Android 2.1 (API 7), which requires different tooling and approaches than modern Android. For newer Nook devices like the Nook Glowlight 4, see [trmnl-nook](https://github.com/usetrmnl/trmnl-nook).
+
+If you have another Nook model from this era that you'd like to test, please [open an issue](https://github.com/bpmct/trmnl-nook-simple-touch/issues/new)!
 
 ## Disclaimer
 AI was used to help code this repo. I have a software development background, but did not want to relearn old Java and the Android 2.1 ecosystem. Despite best-effort scanning and review, the device and/or this software may contain vulnerabilities. Use at your own risk, and if you want to be safer, run it on a guest network.
