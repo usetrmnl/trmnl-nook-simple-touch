@@ -43,6 +43,7 @@ In the TRMNL Device settings, set the device type to "Amazon Kindle 7" (800x600)
 - BYOD support for TRMNL and custom server URLs
 - Reports battery voltage and Wi-Fi signal strength
 - Deep sleep mode for 30+ day battery life
+- Gift Mode for pre-configuring devices as gifts
 
 ## Deep Sleep Mode
 
