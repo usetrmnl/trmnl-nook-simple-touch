@@ -384,7 +384,7 @@ public class DisplayActivity extends Activity {
         }
     }
 
-    /** When we just turned WiFi on, delay fetch so connection can establish (Electric-Sign uses 45s). */
+    /** When we just turned WiFi on, delay fetch so connection can establish. */
     private void scheduleFetchAfterWifiWarmup() {
         if (pendingWifiWarmupRunnable != null) {
             refreshHandler.removeCallbacks(pendingWifiWarmupRunnable);
@@ -489,13 +489,13 @@ public class DisplayActivity extends Activity {
         WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
         if (wifi != null && !wifi.isWifiEnabled()) {
             wifi.setWifiEnabled(true);
-            logD("wifi on (app in foreground), wait ~45s for connection");
+            logD("wifi on (app in foreground), wait ~15s for connection");
             return true;
         }
         return false;
     }
 
-    private static final long WIFI_WARMUP_MS = 45 * 1000;
+    private static final long WIFI_WARMUP_MS = 15 * 1000;
 
     @Override
     public void onUserInteraction() {
@@ -615,7 +615,7 @@ public class DisplayActivity extends Activity {
                 setKeepScreenAwake(false);
                 WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
                 if (wifi != null) wifi.setWifiEnabled(false);
-                logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (+45s warmup = next image on time; NOOK may blank after idle, e.g. 2m)");
+                logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (+15s warmup = next image on time; NOOK may blank after idle, e.g. 2m)");
             }
         };
         refreshHandler.postDelayed(pendingSleepRunnable, SCREENSAVER_DELAY_MS);
