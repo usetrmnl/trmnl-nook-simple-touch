@@ -443,6 +443,7 @@ public class DisplayActivity extends Activity {
             public void run() {
                 pendingConnectivityTimeoutRunnable = null;
                 logD("connectivity wait timed out");
+                logD("Ensure you are connected to WiFi. Press the home button and go into settings to configure.");
                 cancelConnectivityWait();
                 if (showErrorInMenu) {
                     a.showMenuStatus("Couldn't connect. Tap Next to retry.", true);
@@ -458,6 +459,7 @@ public class DisplayActivity extends Activity {
         refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, CONNECTIVITY_MAX_WAIT_MS);
         setBootStatus("Waiting for WiFi...");
         logD("waiting for connectivity, fetch as soon as up (max " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s)");
+        logD("Ensure you are connected to WiFi. Press the home button and go into settings to configure.");
     }
 
     private void cancelConnectivityWait() {
