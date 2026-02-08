@@ -65,13 +65,25 @@ Fix:
   - `logcat` - stream filtered logcat
   - `shell` - open adb shell
 - Use `--adb`, `--ant`, and `--logcat-filter` overrides as needed.
+- Set `NOOK_IP` env var or use `--ip <addr>` to specify device IP (default: 192.168.1.239)
+
+### ADB "offline" troubleshooting
+
+If `adb devices` shows "offline" after connect:
+1. Disconnect: `adb disconnect <ip>:5555`
+2. Wait a second
+3. Reconnect: `adb connect <ip>:5555`
+4. Verify with `adb devices` - should show "device" not "offline"
 
 ## Worktree setup
 
-When working in a git worktree, you need:
-1. `local.properties` - copy from another worktree or create with:
-   `sdk.dir=/home/benpotter/Downloads/adt-bundle-linux-x86_64-20140702/adt-bundle-linux-x86_64-20140702/sdk`
-2. SpongyCastle JARs in `libs/` - copy from another worktree or download per `libs/README_SPONGYCASTLE.md`
+Worktrees are set up automatically via `.mux/init` hook, which symlinks:
+- `local.properties` from main repo
+- SpongyCastle JARs from main repo's `libs/`
+
+If manual setup needed:
+1. `local.properties` with: `sdk.dir=/home/benpotter/Downloads/adt-bundle-linux-x86_64-20140702/adt-bundle-linux-x86_64-20140702/sdk`
+2. SpongyCastle JARs in `libs/` per `libs/README_SPONGYCASTLE.md`
 
 ## Release flow
 
