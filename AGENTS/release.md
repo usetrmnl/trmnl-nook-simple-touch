@@ -21,7 +21,12 @@ Suggested guidance to give users:
 - Wait for the **tag** CI run (not the branch run). Both trigger, but only the
   tag run (`refs/tags/v*`) creates the GitHub Release. Use `gh run list` and
   look for the run with the tag ref (e.g., `v0.1.0`), then `gh run watch <id>`.
-- After CI completes, update release notes: `gh release edit v0.1.0 --notes-file -`
+- After CI completes, update release notes with a "What's New" section:
+  ```
+  gh release edit v0.1.0 --notes "## What's New
+
+  - **Feature name** - Brief description of the change."
+  ```
 
 ## Required GitHub secrets (release signing)
 
