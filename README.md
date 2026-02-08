@@ -2,8 +2,6 @@
 
 A [TRMNL client](https://trmnl.com/developers) for the Nook Simple Touch (BNRV300) and Nook Simple Touch with Glowlight (BNRV350). These devices usually go for around $30 on eBay and have an 800x600 e-ink display.
 
-> **Have a newer Nook?** Check out [trmnl-nook](https://github.com/usetrmnl/trmnl-nook) for BNRV500 and other newer devices.
-
 <table>
 <tr>
 <td width="33%" align="center"><img src="images/configuration.jpg" alt="Configuration"><br><em>Configuration screen</em></td>
@@ -91,6 +89,10 @@ See [GitHub Issues](https://github.com/bpmct/trmnl-nook-simple-touch/issues) for
 
 ## Development
 See the CI workflow for build details ([`build-apk.yml`](https://github.com/bpmct/trmnl-nook-simple-touch/blob/main/.github/workflows/build-apk.yml)), and the `tools/` adb scripts for build/install workflows. A development guide is coming (https://github.com/bpmct/trmnl-nook-simple-touch/issues/8). In the meantime, the project can be built with surprisingly minimal, self-contained dependencies.
+
+## Other Nook Models
+
+For newer Nook devices like the Nook Glowlight 4, see [trmnl-nook](https://github.com/usetrmnl/trmnl-nook).
 
 ## Disclaimer
 AI was used to help code this repo. I have a software development background, but did not want to relearn old Java and the Android 2.1 ecosystem. Despite best-effort scanning and review, the device and/or this software may contain vulnerabilities. Use at your own risk, and if you want to be safer, run it on a guest network.
