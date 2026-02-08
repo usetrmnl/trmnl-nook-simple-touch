@@ -732,6 +732,11 @@ public class DisplayActivity extends Activity {
     }
 
     private void startFetch() {
+        // Cancel any pending sleep runnable to prevent WiFi being turned off mid-fetch
+        if (pendingSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingSleepRunnable);
+            pendingSleepRunnable = null;
+        }
         // Always wait for WiFi before attempting fetch
         if (!isConnectedToNetwork(this)) {
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
