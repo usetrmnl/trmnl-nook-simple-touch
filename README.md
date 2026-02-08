@@ -40,7 +40,7 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 
 ## Device Settings
 
-In the TRMNL Device settings, set the device type to "Amazon Kindle 7" (800x600). This matches the Nook Simple Touch's display resolution. See [issue #10](https://github.com/bpmct/trmnl-nook-simple-touch/issues/10) for why this workaround is needed and efforts to add a dedicated device type.
+In the TRMNL Device settings, set the device type to "Nook Simple Touch" as the TRMNL team was nice enough to add support for this device!
 
 ## Features
 
