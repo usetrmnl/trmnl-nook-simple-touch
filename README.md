@@ -55,12 +55,12 @@ In the TRMNL Device settings, set the device type to "Amazon Kindle 7" (800x600)
 
 ## Deep Sleep Mode
 
-Without deep sleep, expect ~60 hours of battery life. With deep sleep and a 30-minute refresh rate, battery lasts 30+ days. The app writes each image to the Nook's screensaver, turns off WiFi, and sets an RTC alarm to wake up for the next refresh.
+Without deep sleep, expect ~60 hours of battery life. With deep sleep and a 30-minute refresh rate, battery lasts 30+ days. The app writes each image to the Nook's screensaver, turns off WiFi, and sets an RTC alarm to wake for the next refresh.
 
 To enable:
-1. In the app: Enable "Allow Sleep" and "Write Screensaver"
-2. Nook settings: Set screen timeout to 2 minutes, screensaver to "TRMNL"
-3. In Nook Touch Mod: Hide screensaver banner
+1. In the app: Enable "Sleep between updates"
+2. In `Nook Settings → Display → Screensaver`: Set to "TRMNL" with 2-minute timeout
+3. In `Apps → Nook Touch Mod`: Enable "Hide Screensaver Banner"
 
 ## Frames and Cases
 
