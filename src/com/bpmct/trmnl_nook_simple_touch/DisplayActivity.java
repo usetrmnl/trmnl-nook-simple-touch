@@ -700,23 +700,6 @@ public class DisplayActivity extends Activity {
         }
     }
 
-    /**
-     * Reads battery voltage from ACTION_BATTERY_CHANGED sticky broadcast (API 7).
-     * EXTRA_VOLTAGE is millivolts; returns volts (e.g. 3.6f), or -1f if unknown.
-     */
-    private static float getBatteryVoltage(Context context) {
-        if (context == null) return -1f;
-        try {
-            Intent intent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-            if (intent == null) return -1f;
-            int mv = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
-            if (mv <= 0) return -1f;
-            return mv / 1000f;
-        } catch (Throwable t) {
-            return -1f;
-        }
-    }
-
     /** Battery percentage (0-100) from ACTION_BATTERY_CHANGED, or -1 if unknown. */
     private static int getBatteryPercent(Context context) {
         if (context == null) return -1;
@@ -1228,15 +1211,15 @@ public class DisplayActivity extends Activity {
         protected Object doInBackground(Object[] params) {
             String httpsUrl = (String) params[0];
             DisplayActivity a = (DisplayActivity) activityRef.get();
-            float batteryVoltage = getBatteryVoltage(a != null ? a : null);
+            int batteryPercent = getBatteryPercent(a != null ? a : null);
             int rssi = getWifiRssi(a != null ? a : null);
-            if (a != null && batteryVoltage >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", batteryVoltage));
+            if (a != null && batteryPercent >= 0) a.logD("Percent-Charged: " + batteryPercent);
             if (a != null && rssi != -999) a.logD("rssi: " + rssi);
             
             // Try BouncyCastle TLS first (supports TLS 1.2)
             if (BouncyCastleHttpClient.isAvailable()) {
                 if (a != null) a.logD("trying BouncyCastle TLS 1.2");
-                Hashtable headers = buildApiHeaders(apiId, apiToken, batteryVoltage, rssi);
+                Hashtable headers = buildApiHeaders(apiId, apiToken, batteryPercent, rssi);
                 
                 // Try up to 2 times with 3s backoff
                 String bcResult = null;
@@ -1287,7 +1270,7 @@ public class DisplayActivity extends Activity {
         }
         
         private Object fetchUrl(String url, boolean isHttps, String apiId, String apiToken,
-                                float batteryVoltage, int rssi) {
+                                int batteryPercent, int rssi) {
             HttpURLConnection conn = null;
             try {
                 DisplayActivity a0 = (DisplayActivity) activityRef.get();
@@ -1306,8 +1289,8 @@ public class DisplayActivity extends Activity {
                 if (apiToken != null) {
                     conn.setRequestProperty("access-token", apiToken);
                 }
-                if (batteryVoltage >= 0f) {
-                    conn.setRequestProperty("Battery-Voltage", String.format(Locale.US, "%.1f", batteryVoltage));
+                if (batteryPercent >= 0) {
+                    conn.setRequestProperty("Percent-Charged", String.valueOf(batteryPercent));
                 }
                 if (rssi != -999) {
                     conn.setRequestProperty("rssi", String.valueOf(rssi));
@@ -1415,8 +1398,8 @@ public class DisplayActivity extends Activity {
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
                     a.scheduleNextCycle();
-                    float v = getBatteryVoltage(a);
-                    if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
+                    int pct = getBatteryPercent(a);
+                    if (pct >= 0) a.logD("Percent-Charged: " + pct);
                     int rssi = getWifiRssi(a);
                     if (rssi != -999) a.logD("rssi: " + rssi);
                     return;
@@ -1457,8 +1440,8 @@ public class DisplayActivity extends Activity {
             a.logD("next display in " + (a.refreshMs / 1000L) + "s");
             // Schedule next refresh even on error (keep trying)
             a.scheduleNextCycle();
-            float v = getBatteryVoltage(a);
-            if (v >= 0f) a.logD("Battery-Voltage: " + String.format(Locale.US, "%.1f", v));
+            int pct = getBatteryPercent(a);
+            if (pct >= 0) a.logD("Percent-Charged: " + pct);
             int rssi = getWifiRssi(a);
             if (rssi != -999) a.logD("rssi: " + rssi);
         }
@@ -1485,7 +1468,7 @@ public class DisplayActivity extends Activity {
         }
     }
 
-    private static Hashtable buildApiHeaders(String apiId, String apiToken, float batteryVoltage, int rssi) {
+    private static Hashtable buildApiHeaders(String apiId, String apiToken, int batteryPercent, int rssi) {
         Hashtable headers = new Hashtable();
         headers.put("User-Agent", "TRMNL-Nook/1.0 (Android 2.1)");
         headers.put("Accept", "application/json");
@@ -1495,8 +1478,8 @@ public class DisplayActivity extends Activity {
         if (apiToken != null) {
             headers.put("access-token", apiToken);
         }
-        if (batteryVoltage >= 0f) {
-            headers.put("Battery-Voltage", String.format(Locale.US, "%.1f", batteryVoltage));
+        if (batteryPercent >= 0) {
+            headers.put("Percent-Charged", String.valueOf(batteryPercent));
         }
         if (rssi != -999) {
             headers.put("rssi", String.valueOf(rssi));
