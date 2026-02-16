@@ -10,6 +10,19 @@ Releases are driven by annotated tags like `v0.1.0`. The CI workflow
 `build-apk.yml` stamps the manifest version, builds a signed release APK,
 and publishes a GitHub Release with the APK attached.
 
+### Versioning nuance (when to bump major/minor/patch)
+
+This project follows semantic-versioning *in spirit*:
+
+- **Patch** (`0.x.Y`) for small fixes that should be low risk.
+- **Minor** (`0.X.0`) when changes are significant, user-visible, or may affect
+  server compatibility / settings (even if backwards compatible).
+- **Major** (`X.0.0`) only for truly breaking changes.
+
+In practice: if you find yourself writing release notes that include multiple
+new capabilities, settings, or networking behavior changes, prefer a **minor**
+bump so users expect meaningful change.
+
 Suggested guidance to give users:
 - Ensure `main` is clean and up to date.
 - (Optional) Stamp the manifest locally for traceability:
