@@ -118,9 +118,18 @@ public class BouncyCastleHttpClient {
     /**
      * Makes an HTTPS GET request using BouncyCastle TLS.
      * Returns response body as string, or error message on failure.
+     * If allowHttp is enabled and URL is http://, uses plain HTTP.
      */
     public static String getHttps(Context context, String url, Hashtable headers) {
         try {
+            // Check for plain HTTP
+            if (url != null && url.toLowerCase().startsWith("http://")) {
+                if (context != null && ApiPrefs.isAllowHttp(context)) {
+                    return getHttpImpl(context, url, headers);
+                } else {
+                    return "Error: HTTP not allowed (enable in Settings → Network)";
+                }
+            }
             return getHttpsImpl(context, url, headers);
         } catch (Throwable t) {
             Log.e(TAG, "BouncyCastle HTTPS failed", t);
@@ -149,9 +158,19 @@ public class BouncyCastleHttpClient {
     /**
      * Makes an HTTPS GET request and returns raw bytes (e.g., images).
      * Returns null on failure.
+     * If allowHttp is enabled and URL is http://, uses plain HTTP.
      */
     public static byte[] getHttpsBytes(Context context, String url, Hashtable headers) {
         try {
+            // Check for plain HTTP
+            if (url != null && url.toLowerCase().startsWith("http://")) {
+                if (context != null && ApiPrefs.isAllowHttp(context)) {
+                    return getHttpBytesImpl(context, url, headers);
+                } else {
+                    Log.e(TAG, "HTTP not allowed for: " + url);
+                    return null;
+                }
+            }
             return getHttpsBytesImpl(context, url, headers);
         } catch (Throwable t) {
             Log.e(TAG, "BouncyCastle HTTPS bytes failed", t);
@@ -191,12 +210,13 @@ public class BouncyCastleHttpClient {
                     socket.getInputStream(), socket.getOutputStream());
             Log.d(TAG, "BC created TlsClientProtocol instance");
 
-            // Create TLS client (CA-validated)
-            X509TrustManager tm = getTrustManager(context);
-            if (tm == null) {
+            // Create TLS client (CA-validated unless self-signed certs allowed)
+            boolean allowSelfSigned = context != null && ApiPrefs.isAllowSelfSignedCerts(context);
+            X509TrustManager tm = allowSelfSigned ? null : getTrustManager(context);
+            if (tm == null && !allowSelfSigned) {
                 return "Error: CA bundle not available (res/raw/ca_bundle.pem)";
             }
-            DefaultTlsClient tlsClient = createTlsClient(host, tm);
+            DefaultTlsClient tlsClient = createTlsClient(host, tm, allowSelfSigned);
 
             // Connect
             tlsProtocol.connect(tlsClient);
@@ -344,12 +364,13 @@ public class BouncyCastleHttpClient {
                     socket.getInputStream(), socket.getOutputStream());
             Log.d(TAG, "BC created TlsClientProtocol instance (bytes)");
 
-            X509TrustManager tm = getTrustManager(context);
-            if (tm == null) {
+            boolean allowSelfSigned = context != null && ApiPrefs.isAllowSelfSignedCerts(context);
+            X509TrustManager tm = allowSelfSigned ? null : getTrustManager(context);
+            if (tm == null && !allowSelfSigned) {
                 Log.e(TAG, "BC CA bundle not available for bytes request");
                 return null;
             }
-            DefaultTlsClient tlsClient = createTlsClient(host, tm);
+            DefaultTlsClient tlsClient = createTlsClient(host, tm, allowSelfSigned);
 
             tlsProtocol.connect(tlsClient);
             Log.d(TAG, "BC TLS handshake successful (bytes)");
@@ -430,6 +451,216 @@ public class BouncyCastleHttpClient {
         }
     }
 
+    /**
+     * Plain HTTP GET request (no TLS). Only used when allowHttp setting is enabled.
+     */
+    private static String getHttpImpl(Context context, String url, Hashtable headers) throws Exception {
+        java.net.URL u = new java.net.URL(url);
+        String host = u.getHost();
+        int port = u.getPort() > 0 ? u.getPort() : 80;
+        String path = u.getPath();
+        if (path == null || path.length() == 0) {
+            path = "/";
+        }
+        if (u.getQuery() != null) {
+            path += "?" + u.getQuery();
+        }
+
+        Log.d(TAG, "HTTP connecting to " + host + ":" + port + path);
+
+        Socket socket = new Socket(host, port);
+        socket.setSoTimeout(20000);
+        try {
+            OutputStream out = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+
+            logRequest("GET", url, headers);
+            PrintWriter writer = new PrintWriter(out, true);
+            writer.print("GET " + path + " HTTP/1.1\r\n");
+            writeHeaders(writer, headers, host);
+            writer.print("\r\n");
+            writer.flush();
+
+            String statusLine = readAsciiLine(in);
+            if (statusLine == null) {
+                logResponseError(url, "No response from server");
+                return "Error: No response from server";
+            }
+
+            Log.d(TAG, "HTTP response: " + statusLine);
+
+            int statusCode = 0;
+            String reason = "";
+            try {
+                String[] parts = statusLine.split(" ", 3);
+                if (parts.length >= 2) {
+                    statusCode = Integer.parseInt(parts[1]);
+                }
+                if (parts.length >= 3) {
+                    reason = parts[2];
+                }
+            } catch (Exception e) {
+                // Ignore
+            }
+
+            String line;
+            int contentLength = -1;
+            boolean chunked = false;
+            while ((line = readAsciiLine(in)) != null) {
+                if (line.length() == 0) break;
+                String lower = line.toLowerCase();
+                if (lower.startsWith("content-length:")) {
+                    try {
+                        contentLength = Integer.parseInt(line.substring(15).trim());
+                    } catch (Exception e) {}
+                }
+                if (lower.startsWith("transfer-encoding:") && lower.contains("chunked")) {
+                    chunked = true;
+                }
+            }
+
+            // Read body (bytes first, then decode)
+            ByteArrayOutputStream bodyBytes = new ByteArrayOutputStream();
+            if (chunked) {
+                while (true) {
+                    String sizeLine = readAsciiLine(in);
+                    if (sizeLine == null) break;
+                    int semicolon = sizeLine.indexOf(';');
+                    if (semicolon > 0) {
+                        sizeLine = sizeLine.substring(0, semicolon);
+                    }
+                    int size = 0;
+                    try {
+                        size = Integer.parseInt(sizeLine.trim(), 16);
+                    } catch (Exception e) {
+                        return "Error: Invalid chunk size";
+                    }
+                    if (size <= 0) {
+                        // Consume trailing headers
+                        while ((line = readAsciiLine(in)) != null && line.length() > 0) {}
+                        break;
+                    }
+                    int remaining = size;
+                    byte[] buf = new byte[8192];
+                    while (remaining > 0) {
+                        int n = in.read(buf, 0, Math.min(buf.length, remaining));
+                        if (n <= 0) break;
+                        bodyBytes.write(buf, 0, n);
+                        remaining -= n;
+                    }
+                    readAsciiLine(in); // Consume CRLF after chunk
+                }
+            } else if (contentLength > 0) {
+                byte[] buf = new byte[8192];
+                int total = 0;
+                while (total < contentLength) {
+                    int n = in.read(buf, 0, Math.min(buf.length, contentLength - total));
+                    if (n <= 0) break;
+                    bodyBytes.write(buf, 0, n);
+                    total += n;
+                }
+            } else {
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    bodyBytes.write(buf, 0, n);
+                }
+            }
+            String body = new String(bodyBytes.toByteArray(), "UTF-8");
+
+            logResponse(url, statusCode, reason, body.length(), body);
+            return body;
+        } finally {
+            try { socket.close(); } catch (Exception e) {}
+        }
+    }
+
+    /**
+     * Plain HTTP GET request returning bytes (no TLS). Only used when allowHttp setting is enabled.
+     */
+    private static byte[] getHttpBytesImpl(Context context, String url, Hashtable headers) throws Exception {
+        java.net.URL u = new java.net.URL(url);
+        String host = u.getHost();
+        int port = u.getPort() > 0 ? u.getPort() : 80;
+        String path = u.getPath();
+        if (path == null || path.length() == 0) {
+            path = "/";
+        }
+        if (u.getQuery() != null) {
+            path += "?" + u.getQuery();
+        }
+
+        Log.d(TAG, "HTTP connecting (bytes) to " + host + ":" + port + path);
+
+        Socket socket = new Socket(host, port);
+        socket.setSoTimeout(20000);
+        try {
+            OutputStream out = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+
+            logRequest("GET", url, headers);
+            PrintWriter writer = new PrintWriter(out, true);
+            writer.print("GET " + path + " HTTP/1.1\r\n");
+            writeHeaders(writer, headers, host);
+            writer.print("\r\n");
+            writer.flush();
+
+            String statusLine = readAsciiLine(in);
+            if (statusLine == null) {
+                logResponseError(url, "No response from server (bytes)");
+                return null;
+            }
+
+            int statusCode = 0;
+            try {
+                String[] parts = statusLine.split(" ");
+                if (parts.length >= 2) {
+                    statusCode = Integer.parseInt(parts[1]);
+                }
+            } catch (Exception e) {}
+
+            String line;
+            int contentLength = -1;
+            while ((line = readAsciiLine(in)) != null) {
+                if (line.length() == 0) break;
+                if (line.toLowerCase().startsWith("content-length:")) {
+                    try {
+                        contentLength = Integer.parseInt(line.substring(15).trim());
+                    } catch (Exception e) {}
+                }
+            }
+
+            if (statusCode < 200 || statusCode >= 300) {
+                logResponseError(url, "HTTP " + statusCode + " (bytes)");
+                return null;
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            if (contentLength > 0) {
+                byte[] buf = new byte[8192];
+                int total = 0;
+                while (total < contentLength) {
+                    int n = in.read(buf, 0, Math.min(buf.length, contentLength - total));
+                    if (n <= 0) break;
+                    baos.write(buf, 0, n);
+                    total += n;
+                }
+            } else {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    baos.write(buf, 0, n);
+                }
+            }
+
+            byte[] result = baos.toByteArray();
+            logResponseBytes(url, statusCode, "OK", result.length);
+            return result;
+        } finally {
+            try { socket.close(); } catch (Exception e) {}
+        }
+    }
+
     private static String readAsciiLine(InputStream in) throws IOException {
         ByteArrayOutputStream line = new ByteArrayOutputStream();
         int c;
@@ -499,7 +730,7 @@ public class BouncyCastleHttpClient {
         return false;
     }
     
-    private static DefaultTlsClient createTlsClient(final String hostname, final X509TrustManager tm) {
+    private static DefaultTlsClient createTlsClient(final String hostname, final X509TrustManager tm, final boolean allowSelfSigned) {
         SecureRandom secureRandom = new SecureRandom();
         final BcTlsCrypto crypto = new BcTlsCrypto(secureRandom);
 
@@ -540,6 +771,11 @@ public class BouncyCastleHttpClient {
             public TlsAuthentication getAuthentication() {
                 return new TlsAuthentication() {
                     public void notifyServerCertificate(TlsServerCertificate serverCertificate) throws java.io.IOException {
+                        // If self-signed certs allowed, skip validation
+                        if (allowSelfSigned) {
+                            Log.d(TAG, "BC skipping certificate validation (self-signed allowed)");
+                            return;
+                        }
                         if (tm == null) {
                             throw new TlsFatalAlert(AlertDescription.bad_certificate);
                         }

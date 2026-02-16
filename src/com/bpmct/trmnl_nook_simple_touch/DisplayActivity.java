@@ -617,8 +617,10 @@ public class DisplayActivity extends Activity {
                 sleepMs = Math.max(0, sleepMs - WIFI_WARMUP_MS);
                 scheduleReload(sleepMs);
                 setKeepScreenAwake(false);
-                WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-                if (wifi != null) wifi.setWifiEnabled(false);
+                if (ApiPrefs.isAutoDisableWifi(DisplayActivity.this)) {
+                    WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+                    if (wifi != null) wifi.setWifiEnabled(false);
+                }
                 logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (+15s warmup = next image on time; NOOK may blank after idle, e.g. 2m)");
             }
         };
@@ -650,8 +652,10 @@ public class DisplayActivity extends Activity {
             writeScreenshotToScreensaver(bitmap);
             scheduleReload(refreshMs);
             setKeepScreenAwake(false);
-            WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-            if (wifi != null) wifi.setWifiEnabled(false);
+            if (ApiPrefs.isAutoDisableWifi(this)) {
+                WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+                if (wifi != null) wifi.setWifiEnabled(false);
+            }
             logD("sleep allowed: alarm set, screen off, wifi off");
         } else {
             scheduleRefresh();

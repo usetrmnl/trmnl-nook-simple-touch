@@ -52,11 +52,11 @@ final class TrmnlApiResponseParser {
         try {
             JSONObject obj = new JSONObject(jsonText);
             int status = obj.optInt("status", -1);
-            // API returns 0 for display
-            if (status != 0 && status != 200) {
+            // API returns 0 for display; BYOS may omit status entirely
+            if (status != -1 && status != 0 && status != 200) {
                 return new Result(jsonText);
             }
-            if (log != null) log.logD("api status: " + status);
+            if (status != -1 && log != null) log.logD("api status: " + status);
 
             int refreshRateSeconds = obj.optInt("refresh_rate", -1);
 
@@ -98,6 +98,14 @@ final class TrmnlApiResponseParser {
                 if (log != null) log.logW("image decode failed");
                 return new Result(jsonText);
             }
+
+            // Normalize common BYOS landscape format to NOOK portrait.
+            // TRMNL official images are 600x800 (portrait). Some BYOS servers return 800x600.
+            if (bitmap.getWidth() == 800 && bitmap.getHeight() == 600) {
+                if (log != null) log.logD("rotating landscape image 800x600 -> 600x800");
+                bitmap = rotate90(bitmap);
+            }
+
             if (imageUrl.endsWith("/empty_state.bmp")) {
                 bitmap = rotate90(bitmap);
             }

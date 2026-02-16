@@ -23,6 +23,9 @@ public class SettingsActivity extends Activity {
     private CheckBox giftModeCheck;
     private Button giftSettingsButton;
     private TextView sleepHint;
+    private CheckBox allowHttpCheck;
+    private CheckBox allowSelfSignedCheck;
+    private CheckBox autoDisableWifiCheck;
     private FrameLayout rootLayout;
     private FrameLayout outerRoot;
     private View flashOverlay;
@@ -126,6 +129,53 @@ public class SettingsActivity extends Activity {
         giftBtnParams.topMargin = 6;
         main.addView(giftSettingsButton, giftBtnParams);
         updateGiftSettingsVisibility();
+
+        // Network (for self-hosted/BYOS setups)
+        main.addView(createSectionLabel("Network"));
+        allowHttpCheck = new CheckBox(this);
+        allowHttpCheck.setText("Allow HTTP (insecure)");
+        allowHttpCheck.setTextColor(0xFF000000);
+        allowHttpCheck.setChecked(ApiPrefs.isAllowHttp(this));
+        main.addView(allowHttpCheck);
+
+        TextView httpHint = new TextView(this);
+        httpHint.setText("Enable for local/BYOS servers without HTTPS");
+        httpHint.setTextSize(11);
+        httpHint.setTextColor(0xFF888888);
+        httpHint.setPadding(40, 0, 0, 0);
+        main.addView(httpHint);
+
+        allowSelfSignedCheck = new CheckBox(this);
+        allowSelfSignedCheck.setText("Allow self-signed certificates");
+        allowSelfSignedCheck.setTextColor(0xFF000000);
+        allowSelfSignedCheck.setChecked(ApiPrefs.isAllowSelfSignedCerts(this));
+        LinearLayout.LayoutParams selfSignedParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        selfSignedParams.topMargin = 8;
+        main.addView(allowSelfSignedCheck, selfSignedParams);
+
+        TextView selfSignedHint = new TextView(this);
+        selfSignedHint.setText("Trust HTTPS servers with self-signed certs");
+        selfSignedHint.setTextSize(11);
+        selfSignedHint.setTextColor(0xFF888888);
+        selfSignedHint.setPadding(40, 0, 0, 0);
+        main.addView(selfSignedHint);
+
+        autoDisableWifiCheck = new CheckBox(this);
+        autoDisableWifiCheck.setText("Auto-disable WiFi");
+        autoDisableWifiCheck.setTextColor(0xFF000000);
+        autoDisableWifiCheck.setChecked(ApiPrefs.isAutoDisableWifi(this));
+        LinearLayout.LayoutParams wifiParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wifiParams.topMargin = 8;
+        main.addView(autoDisableWifiCheck, wifiParams);
+
+        TextView wifiHint = new TextView(this);
+        wifiHint.setText("Turn off WiFi between fetches to save battery");
+        wifiHint.setTextSize(11);
+        wifiHint.setTextColor(0xFF888888);
+        wifiHint.setPadding(40, 0, 0, 0);
+        main.addView(wifiHint);
 
         // Debug Logs
         main.addView(createSectionLabel("Debug Logs"));
@@ -250,6 +300,9 @@ public class SettingsActivity extends Activity {
         if (giftSettingsButton != null && giftModeCheck != null) {
             giftSettingsButton.setVisibility(giftModeCheck.isChecked() ? View.VISIBLE : View.GONE);
         }
+        if (allowHttpCheck != null) allowHttpCheck.setChecked(ApiPrefs.isAllowHttp(this));
+        if (allowSelfSignedCheck != null) allowSelfSignedCheck.setChecked(ApiPrefs.isAllowSelfSignedCerts(this));
+        if (autoDisableWifiCheck != null) autoDisableWifiCheck.setChecked(ApiPrefs.isAutoDisableWifi(this));
     }
 
     protected void onPause() {
@@ -265,5 +318,8 @@ public class SettingsActivity extends Activity {
             FileLogger.setEnabled(enabled);
         }
         if (giftModeCheck != null) ApiPrefs.setGiftModeEnabled(this, giftModeCheck.isChecked());
+        if (allowHttpCheck != null) ApiPrefs.setAllowHttp(this, allowHttpCheck.isChecked());
+        if (allowSelfSignedCheck != null) ApiPrefs.setAllowSelfSignedCerts(this, allowSelfSignedCheck.isChecked());
+        if (autoDisableWifiCheck != null) ApiPrefs.setAutoDisableWifi(this, autoDisableWifiCheck.isChecked());
     }
 }

@@ -15,6 +15,9 @@ public class ApiPrefs {
     private static final String KEY_FRIENDLY_DEVICE_CODE = "friendly_device_code";
     private static final String KEY_GIFT_FROM_NAME = "gift_from_name";
     private static final String KEY_GIFT_TO_NAME = "gift_to_name";
+    private static final String KEY_ALLOW_HTTP = "allow_http";
+    private static final String KEY_ALLOW_SELF_SIGNED_CERTS = "allow_self_signed_certs";
+    private static final String KEY_AUTO_DISABLE_WIFI = "auto_disable_wifi";
     private static final String SCREENSAVER_PATH = "/media/screensavers/TRMNL/display.png";
 
     public static boolean hasCredentials(Context context) {
@@ -162,5 +165,38 @@ public class ApiPrefs {
     public static void saveGiftToName(Context context, String name) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putString(KEY_GIFT_TO_NAME, name != null ? name.trim() : "").commit();
+    }
+
+    /** Whether to allow HTTP (non-HTTPS) connections. Default false. */
+    public static boolean isAllowHttp(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_ALLOW_HTTP, false);
+    }
+
+    public static void setAllowHttp(Context context, boolean allow) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_ALLOW_HTTP, allow).commit();
+    }
+
+    /** Whether to allow self-signed certificates. Default false. */
+    public static boolean isAllowSelfSignedCerts(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_ALLOW_SELF_SIGNED_CERTS, false);
+    }
+
+    public static void setAllowSelfSignedCerts(Context context, boolean allow) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_ALLOW_SELF_SIGNED_CERTS, allow).commit();
+    }
+
+    /** Whether to auto-disable WiFi between fetches for battery saving. Default true. */
+    public static boolean isAutoDisableWifi(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_AUTO_DISABLE_WIFI, true);
+    }
+
+    public static void setAutoDisableWifi(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_AUTO_DISABLE_WIFI, enabled).commit();
     }
 }

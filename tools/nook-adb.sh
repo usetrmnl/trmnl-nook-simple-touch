@@ -301,6 +301,29 @@ run_app() {
   adb_target shell am start -n "${APP_PKG}/${APP_ACTIVITY}"
 }
 
+
+
+PREFS_FILE="/data/data/${APP_PKG}/shared_prefs/trmnl_prefs.xml"
+
+get_settings() {
+  ensure_connected
+  adb_target shell cat "${PREFS_FILE}"
+}
+LOG_FILE="/media/My Files/trmnl.log"
+
+get_log() {
+  ensure_connected
+  local n="${1:-200}"
+  adb_target shell "ls -la \"${LOG_FILE}\" 2>/dev/null || true"
+  adb_target shell "tail -n ${n} \"${LOG_FILE}\""
+}
+
+clear_log() {
+  ensure_connected
+  # Truncate if exists; otherwise create empty.
+  adb_target shell "(echo -n '' > \"${LOG_FILE}\") 2>/dev/null || true"
+  adb_target shell "ls -la \"${LOG_FILE}\" 2>/dev/null || true"
+}
 logcat() {
   ensure_connected
   set -f
@@ -485,6 +508,13 @@ main() {
       ;;
     shell)
       shell_into
+      ;;
+    get-log)
+      # Usage: get-log [N]
+      get_log "${1:-200}"
+      ;;
+    clear-log)
+      clear_log
       ;;
     ""|-h|--help)
       usage
