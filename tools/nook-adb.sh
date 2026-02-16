@@ -304,12 +304,76 @@ run_app() {
 
 
 PREFS_FILE="/data/data/${APP_PKG}/shared_prefs/trmnl_prefs.xml"
+PREFS_DIR="${PROJECT_DIR}/prefs"
+
 
 get_settings() {
   ensure_connected
   adb_target shell cat "${PREFS_FILE}"
 }
+
+set_settings() {
+  local src="${1:-}"
+  [[ -n "${src}" ]] || die "set-settings requires --file /path/to/prefs.xml"
+  [[ -f "${src}" ]] || die "prefs file not found: ${src}"
+  ensure_connected
+  local tmp="/data/local/tmp/trmnl_prefs.xml"
+  adb_target push "${src}" "${tmp}" >/dev/null
+  adb_target shell "cat \"${tmp}\" > \"${PREFS_FILE}\""
+  echo "Settings written."
+  get_settings
+}
 LOG_FILE="/media/My Files/trmnl.log"
+
+set_preset() {
+  local name="${1:-}"
+  [[ -n "${name}" ]] || die "set-preset requires a preset name"
+  local preset_file="${PREFS_DIR}/${name}.args"
+  [[ -f "${preset_file}" ]] || die "preset not found: ${preset_file}"
+
+  local args=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" ]] && continue
+    [[ "${line}" =~ ^# ]] && continue
+    args+=("${line}")
+  done < "${preset_file}"
+
+  [[ ${#args[@]} -gt 0 ]] || die "preset is empty: ${preset_file}"
+  set_kv_settings "${args[@]}"
+}
+set_kv_settings() {
+  ensure_connected
+  local tmp_local
+  tmp_local="$(mktemp -t trmnl_prefs.XXXXXX.xml)"
+  local tmp_remote="/data/local/tmp/trmnl_prefs.xml"
+
+  # Pull current prefs if present
+  if ! adb_target shell cat "${PREFS_FILE}" > "${tmp_local}" 2>/dev/null; then
+    cat > "${tmp_local}" <<'EOF'
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+</map>
+EOF
+  fi
+
+  local pybin=""
+  if command -v python3 >/dev/null 2>&1; then
+    pybin="python3"
+  elif command -v python >/dev/null 2>&1; then
+    pybin="python"
+  else
+    die "set-setting requires python3 or python on PATH"
+  fi
+
+  "${pybin}" "${SCRIPT_DIR}/prefs-xml.py" "$tmp_local" "$@"
+
+  adb_target push "${tmp_local}" "${tmp_remote}" >/dev/null
+  adb_target shell "cat \"${tmp_remote}\" > \"${PREFS_FILE}\""
+  rm -f "${tmp_local}"
+  echo "Settings updated."
+  get_settings
+}
+
 
 get_log() {
   ensure_connected
@@ -365,6 +429,10 @@ Commands:
   install-run-logcat
   logcat
   shell
+  get-settings           Dump current app settings
+  set-settings --file    Replace app settings from XML file
+  set-setting            Update settings by key/value
+  set-preset             Apply preset from prefs/<name>.args
 
 Examples:
   tools/nook-adb.sh build                 # build only, no device
@@ -377,6 +445,13 @@ Examples:
   tools/nook-adb.sh --clean build-install-run
   tools/nook-adb.sh install-run-logcat    # install + run + logcat
   tools/nook-adb.sh build-install-run-logcat --ant /path/to/ant
+  tools/nook-adb.sh --ip 192.168.1.236 get-settings
+  tools/nook-adb.sh --ip 192.168.1.236 set-settings --file /path/to/trmnl_prefs.xml
+  tools/nook-adb.sh --ip 192.168.1.236 set-setting \
+    --string api_id "A1:B2" \
+    --string api_token "..." \
+    --string api_base_url "https://usetrmnl.com/api" \
+    --bool allow_sleep true
 EOF
 }
 
@@ -508,6 +583,35 @@ main() {
       ;;
     shell)
       shell_into
+      ;;
+    get-settings)
+      get_settings
+      ;;
+    set-settings)
+      local file_path=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --file)
+            shift
+            [[ $# -gt 0 ]] || die "--file requires a value"
+            file_path="$1"
+            shift
+            ;;
+          *)
+            die "unknown option for set-settings: $1"
+            ;;
+        esac
+      done
+      [[ -n "${file_path}" ]] || die "set-settings requires --file"
+      set_settings "${file_path}"
+      ;;
+    set-setting)
+      # Usage: set-setting --string key value [--string key value ...] [--bool key true|false ...]
+      [[ $# -gt 0 ]] || die "set-setting requires arguments"
+      set_kv_settings "$@"
+      ;;
+    set-preset)
+      set_preset "${1:-}"
       ;;
     get-log)
       # Usage: get-log [N]

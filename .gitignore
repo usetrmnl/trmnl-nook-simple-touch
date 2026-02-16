@@ -18,6 +18,10 @@ libs/spongycastle-*.jar
 # Local SDK path (do not commit)
 local.properties
 
+
+# Local preference presets (do not commit)
+prefs/*.args
+prefs/*.xml
 # API credentials (do not commit)
 
 # Logs / OS junk

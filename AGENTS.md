@@ -44,6 +44,42 @@ adb -s <ip>:5555 shell "tail -n 200 '/media/My Files/trmnl.log'"
 - ADB reconnect: `tools/nook-adb.sh connect` after device comes back online
 
 ### Boot & Error UX
+
+### Prefs presets (SaaS / self-hosted)
+
+To switch settings quickly, create local presets in `prefs/` (gitignored). Use one argument per line so the shell doesn't have to parse quoting.
+
+Example: `prefs/selfhosted.args`
+
+```
+--string
+api_id
+A1:B2:C3:D4:E5:F6
+--string
+api_token
+YOUR_TOKEN
+--string
+api_base_url
+http://192.168.1.232:2300/api
+--bool
+allow_http
+true
+--bool
+allow_sleep
+false
+```
+
+Apply with:
+
+```
+tools/nook-adb.sh --ip <ip> set-preset selfhosted
+```
+
+For SaaS, create `prefs/saas.args` with the hosted credentials/base URL, then:
+
+```
+tools/nook-adb.sh --ip <ip> set-preset saas
+```
 - Boot screen: header with icon + status text + streaming logs below
 - Update status via `setBootStatus("message")` during boot
 - On error: show boot header with "Error - tap to retry" + full logs
@@ -55,6 +91,22 @@ adb -s <ip>:5555 shell "tail -n 200 '/media/My Files/trmnl.log'"
 - `logE()` always shows on screen
 
 ## Index
+
+### Worktree merge notes
+
+When `main` is checked out in another worktree, you can't switch it here. Use a worktree-safe patch:
+
+```
+# from this worktree
+
+git format-patch origin/main --stdout > /tmp/adb-device-ad7e.patch
+
+# then in the main worktree
+
+git apply /tmp/adb-device-ad7e.patch
+
+git commit -am "Merge adb-device-ad7e changes"
+```
 
 - `AGENTS/platform-constraints.md`
 - `AGENTS/build-tooling.md`
