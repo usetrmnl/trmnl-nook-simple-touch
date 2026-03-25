@@ -15,7 +15,11 @@ import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.ScrollView;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 
 public class SettingsActivity extends Activity {
     private static final int APP_ROTATION_DEGREES = 90;
@@ -28,6 +32,7 @@ public class SettingsActivity extends Activity {
     private CheckBox allowHttpCheck;
     private CheckBox allowSelfSignedCheck;
     private CheckBox autoDisableWifiCheck;
+    private TextView wifiStatusView;
     private FrameLayout rootLayout;
     private FrameLayout outerRoot;
     private View flashOverlay;
@@ -159,7 +164,29 @@ public class SettingsActivity extends Activity {
         panelNetwork.setOrientation(LinearLayout.VERTICAL);
         panelNetwork.setVisibility(View.GONE);
 
-        panelNetwork.addView(createSectionLabel("Network"));
+        panelNetwork.addView(createSectionLabel("WiFi"));
+        wifiStatusView = new TextView(this);
+        wifiStatusView.setTextSize(12);
+        wifiStatusView.setTextColor(0xFF444444);
+        LinearLayout.LayoutParams wifiStatusParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wifiStatusParams.topMargin = 6;
+        panelNetwork.addView(wifiStatusView, wifiStatusParams);
+        wifiStatusView.setText(getWifiStatusText());
+
+        Button wifiSettingsButton = createGreyButton("WiFi Settings");
+        wifiSettingsButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
+            }
+        });
+        LinearLayout.LayoutParams wifiSettBtnParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wifiSettBtnParams.topMargin = 8;
+        wifiSettBtnParams.bottomMargin = 12;
+        panelNetwork.addView(wifiSettingsButton, wifiSettBtnParams);
+
+        panelNetwork.addView(createSectionLabel("Options"));
         allowHttpCheck = new CheckBox(this);
         allowHttpCheck.setText("Allow HTTP (insecure)");
         allowHttpCheck.setTextColor(0xFF000000);
@@ -330,6 +357,24 @@ public class SettingsActivity extends Activity {
         setContentView(outerRoot);
     }
 
+    private String getWifiStatusText() {
+        WifiManager wm = (WifiManager) getSystemService(WIFI_SERVICE);
+        if (wm == null || !wm.isWifiEnabled()) return "WiFi off";
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm != null) {
+            NetworkInfo ni = cm.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+            if (ni != null && ni.isConnected()) {
+                WifiInfo info = wm.getConnectionInfo();
+                String ssid = info != null ? info.getSSID() : null;
+                if (ssid != null && ssid.startsWith("\"") && ssid.endsWith("\"")) {
+                    ssid = ssid.substring(1, ssid.length() - 1);
+                }
+                return "Connected: " + (ssid != null ? ssid : "unknown");
+            }
+        }
+        return "Not connected";
+    }
+
     private TextView createSectionLabel(String text) {
         TextView label = new TextView(this);
         label.setText(text);
@@ -404,6 +449,7 @@ public class SettingsActivity extends Activity {
         if (allowHttpCheck != null) allowHttpCheck.setChecked(ApiPrefs.isAllowHttp(this));
         if (allowSelfSignedCheck != null) allowSelfSignedCheck.setChecked(ApiPrefs.isAllowSelfSignedCerts(this));
         if (autoDisableWifiCheck != null) autoDisableWifiCheck.setChecked(ApiPrefs.isAutoDisableWifi(this));
+        if (wifiStatusView != null) wifiStatusView.setText(getWifiStatusText());
     }
 
     protected void onPause() {
