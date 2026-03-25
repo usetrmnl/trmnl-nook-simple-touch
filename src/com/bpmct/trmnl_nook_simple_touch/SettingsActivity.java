@@ -60,8 +60,29 @@ public class SettingsActivity extends Activity {
         title.setTextColor(0xFF000000);
         main.addView(title);
 
-        // Credentials
-        main.addView(createSectionLabel("Credentials"));
+        // ── Tab bar ──────────────────────────────────────────────────────────
+        final LinearLayout tabBar = new LinearLayout(this);
+        tabBar.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams tabBarParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tabBarParams.topMargin = 12;
+
+        final Button tabGeneral = createTabButton("General");
+        final Button tabNetwork = createTabButton("Network");
+        final Button tabSystem  = createTabButton("System");
+
+        LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tabBar.addView(tabGeneral, tabParams);
+        tabBar.addView(tabNetwork, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        tabBar.addView(tabSystem,  new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        main.addView(tabBar, tabBarParams);
+
+        // ── Panel: General ───────────────────────────────────────────────────
+        final LinearLayout panelGeneral = new LinearLayout(this);
+        panelGeneral.setOrientation(LinearLayout.VERTICAL);
+
+        panelGeneral.addView(createSectionLabel("Credentials"));
         statusView = new TextView(this);
         statusView.setTextSize(12);
         statusView.setTextColor(0xFF444444);
@@ -69,7 +90,8 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusParams.topMargin = 6;
-        main.addView(statusView, statusParams);
+        panelGeneral.addView(statusView, statusParams);
+
         Button editButton = createGreyButton("Edit Credentials");
         editButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -79,15 +101,14 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         editParams.topMargin = 8;
-        main.addView(editButton, editParams);
+        panelGeneral.addView(editButton, editParams);
 
-        // Display
-        main.addView(createSectionLabel("Display"));
+        panelGeneral.addView(createSectionLabel("Display"));
         allowSleepCheck = new CheckBox(this);
         allowSleepCheck.setText("Sleep between updates");
         allowSleepCheck.setTextColor(0xFF000000);
         allowSleepCheck.setChecked(ApiPrefs.isAllowSleep(this));
-        main.addView(allowSleepCheck);
+        panelGeneral.addView(allowSleepCheck);
 
         sleepHint = new TextView(this);
         sleepHint.setText("Set screensaver to TRMNL, sleep after 2 min");
@@ -95,7 +116,7 @@ public class SettingsActivity extends Activity {
         sleepHint.setTextColor(0xFF888888);
         sleepHint.setPadding(40, 0, 0, 0);
         sleepHint.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
-        main.addView(sleepHint);
+        panelGeneral.addView(sleepHint);
 
         allowSleepCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -104,8 +125,7 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        // Gift Mode
-        main.addView(createSectionLabel("Gift Mode"));
+        panelGeneral.addView(createSectionLabel("Gift Mode"));
         giftModeCheck = new CheckBox(this);
         giftModeCheck.setText("Enable gift mode");
         giftModeCheck.setTextColor(0xFF000000);
@@ -118,7 +138,7 @@ public class SettingsActivity extends Activity {
                 }
             }
         });
-        main.addView(giftModeCheck);
+        panelGeneral.addView(giftModeCheck);
 
         giftSettingsButton = createGreyButton("Configure Gift Mode");
         giftSettingsButton.setOnClickListener(new View.OnClickListener() {
@@ -129,23 +149,29 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams giftBtnParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         giftBtnParams.topMargin = 6;
-        main.addView(giftSettingsButton, giftBtnParams);
+        panelGeneral.addView(giftSettingsButton, giftBtnParams);
         updateGiftSettingsVisibility();
 
-        // Network (for self-hosted/BYOS setups)
-        main.addView(createSectionLabel("Network"));
+        main.addView(panelGeneral);
+
+        // ── Panel: Network ───────────────────────────────────────────────────
+        final LinearLayout panelNetwork = new LinearLayout(this);
+        panelNetwork.setOrientation(LinearLayout.VERTICAL);
+        panelNetwork.setVisibility(View.GONE);
+
+        panelNetwork.addView(createSectionLabel("Network"));
         allowHttpCheck = new CheckBox(this);
         allowHttpCheck.setText("Allow HTTP (insecure)");
         allowHttpCheck.setTextColor(0xFF000000);
         allowHttpCheck.setChecked(ApiPrefs.isAllowHttp(this));
-        main.addView(allowHttpCheck);
+        panelNetwork.addView(allowHttpCheck);
 
         TextView httpHint = new TextView(this);
         httpHint.setText("Enable for local/BYOS servers without HTTPS");
         httpHint.setTextSize(11);
         httpHint.setTextColor(0xFF888888);
         httpHint.setPadding(40, 0, 0, 0);
-        main.addView(httpHint);
+        panelNetwork.addView(httpHint);
 
         allowSelfSignedCheck = new CheckBox(this);
         allowSelfSignedCheck.setText("Allow self-signed certificates");
@@ -154,14 +180,14 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams selfSignedParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         selfSignedParams.topMargin = 8;
-        main.addView(allowSelfSignedCheck, selfSignedParams);
+        panelNetwork.addView(allowSelfSignedCheck, selfSignedParams);
 
         TextView selfSignedHint = new TextView(this);
         selfSignedHint.setText("Trust HTTPS servers with self-signed certs");
         selfSignedHint.setTextSize(11);
         selfSignedHint.setTextColor(0xFF888888);
         selfSignedHint.setPadding(40, 0, 0, 0);
-        main.addView(selfSignedHint);
+        panelNetwork.addView(selfSignedHint);
 
         autoDisableWifiCheck = new CheckBox(this);
         autoDisableWifiCheck.setText("Auto-disable WiFi");
@@ -170,41 +196,46 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams wifiParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         wifiParams.topMargin = 8;
-        main.addView(autoDisableWifiCheck, wifiParams);
+        panelNetwork.addView(autoDisableWifiCheck, wifiParams);
 
         TextView wifiHint = new TextView(this);
         wifiHint.setText("Turn off WiFi between fetches to save battery");
         wifiHint.setTextSize(11);
         wifiHint.setTextColor(0xFF888888);
         wifiHint.setPadding(40, 0, 0, 0);
-        main.addView(wifiHint);
+        panelNetwork.addView(wifiHint);
 
-        // Debug & Device
-        main.addView(createSectionLabel("Debug & Device"));
+        main.addView(panelNetwork);
+
+        // ── Panel: System ────────────────────────────────────────────────────
+        final LinearLayout panelSystem = new LinearLayout(this);
+        panelSystem.setOrientation(LinearLayout.VERTICAL);
+        panelSystem.setVisibility(View.GONE);
+
+        panelSystem.addView(createSectionLabel("Debug Logs"));
         fileLoggingCheck = new CheckBox(this);
         fileLoggingCheck.setText("Save logs to file");
         fileLoggingCheck.setTextColor(0xFF000000);
         fileLoggingCheck.setChecked(ApiPrefs.isFileLoggingEnabled(this));
-        main.addView(fileLoggingCheck);
+        panelSystem.addView(fileLoggingCheck);
 
         TextView logHint = new TextView(this);
         logHint.setText("/media/My Files/trmnl.log");
         logHint.setTextSize(11);
         logHint.setTextColor(0xFF888888);
         logHint.setPadding(40, 0, 0, 0);
-        main.addView(logHint);
+        panelSystem.addView(logHint);
 
         Button clearLogsButton = createGreyButton("Clear Logs");
         clearLogsButton.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                FileLogger.clear();
-            }
+            public void onClick(View v) { FileLogger.clear(); }
         });
         LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clearParams.topMargin = 6;
-        main.addView(clearLogsButton, clearParams);
+        panelSystem.addView(clearLogsButton, clearParams);
 
+        panelSystem.addView(createSectionLabel("Device"));
         LinearLayout deviceRow = new LinearLayout(this);
         deviceRow.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams deviceRowParams = new LinearLayout.LayoutParams(
@@ -240,8 +271,30 @@ public class SettingsActivity extends Activity {
             }
         });
         deviceRow.addView(appsDrawerButton, appsParams);
+        panelSystem.addView(deviceRow, deviceRowParams);
 
-        main.addView(deviceRow, deviceRowParams);
+        main.addView(panelSystem);
+
+        // ── Tab switching logic ───────────────────────────────────────────────
+        final LinearLayout[] panels = { panelGeneral, panelNetwork, panelSystem };
+        final Button[] tabs = { tabGeneral, tabNetwork, tabSystem };
+
+        View.OnClickListener tabClick = new View.OnClickListener() {
+            public void onClick(View v) {
+                for (int i = 0; i < tabs.length; i++) {
+                    boolean active = tabs[i] == v;
+                    panels[i].setVisibility(active ? View.VISIBLE : View.GONE);
+                    tabs[i].setBackgroundColor(active ? 0xFF000000 : 0xFFDDDDDD);
+                    tabs[i].setTextColor(active ? 0xFFFFFFFF : 0xFF444444);
+                }
+            }
+        };
+        tabGeneral.setOnClickListener(tabClick);
+        tabNetwork.setOnClickListener(tabClick);
+        tabSystem.setOnClickListener(tabClick);
+        // start on General (already active styling)
+        tabGeneral.setBackgroundColor(0xFF000000);
+        tabGeneral.setTextColor(0xFFFFFFFF);
 
         scroll.addView(main);
         rootLayout.addView(scroll, new FrameLayout.LayoutParams(
@@ -287,6 +340,14 @@ public class SettingsActivity extends Activity {
         params.topMargin = 28;
         label.setLayoutParams(params);
         return label;
+    }
+
+    private Button createTabButton(String text) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setTextColor(0xFF444444);
+        btn.setBackgroundColor(0xFFDDDDDD);
+        return btn;
     }
 
     private Button createGreyButton(String text) {
