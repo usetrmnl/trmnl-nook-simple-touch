@@ -64,6 +64,7 @@ public class DisplayActivity extends Activity {
     private static final String API_DISPLAY_PATH = "/display";
     private static final String ALARM_REFRESH_ACTION = "com.bpmct.trmnl_nook_simple_touch.ALARM_REFRESH_ACTION";
     private static final int MAX_WIFI_RECOVERY_ATTEMPTS = 2;
+    private static final long FETCH_WATCHDOG_MS = 5 * 60 * 1000;
     /** When true, skip API and show generic on screen (for testing). When false, foreground = API image, screensaver file = generic. */
     private static final boolean USE_GENERIC_IMAGE = false;
     /** Delay after showing API image before writing screensaver and going to sleep (show picture, then screensaver, then sleep full interval). */
@@ -95,6 +96,7 @@ public class DisplayActivity extends Activity {
     private Runnable refreshRunnable;
     private volatile boolean fetchInProgress = false;
     private volatile boolean fetchStartedFromMenu = false;
+    private volatile int activeFetchToken = 0;
     private volatile long refreshMs = DEFAULT_REFRESH_MS;
     /** Last displayed API image; used for screensaver file when allow-sleep + write-screensaver. */
     private Bitmap lastDisplayedImage;
@@ -120,6 +122,8 @@ public class DisplayActivity extends Activity {
     private Runnable pendingWifiRecoveryRunnable;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
+    private Runnable pendingFetchWatchdogRunnable;
+    private ApiFetchTask currentFetchTask;
     private static final long CONNECTIVITY_MAX_WAIT_MS = 5 * 1000;
     private volatile int wifiRecoveryAttempts = 0;
 
@@ -820,6 +824,18 @@ public class DisplayActivity extends Activity {
     protected void onDestroy() {
         logD("onDestroy pid=" + android.os.Process.myPid());
         cancelConnectivityWait();
+        cancelFetchWatchdog();
+        if (currentFetchTask != null) {
+            try {
+                currentFetchTask.cancel(true);
+            } catch (Throwable t) {
+                Log.w(TAG, "onDestroy cancel fetch: " + t);
+            }
+            currentFetchTask = null;
+            activeFetchToken++;
+            fetchInProgress = false;
+            fetchStartedFromMenu = false;
+        }
         // Safety net: always restore screen timeout in case the app dies before onResume
         try {
             android.provider.Settings.System.putInt(
@@ -1075,6 +1091,8 @@ public class DisplayActivity extends Activity {
         wifiRecoveryAttempts = 0;
         fetchInProgress = true;
         fetchStartedFromMenu = menuVisible;
+        activeFetchToken++;
+        final int fetchToken = activeFetchToken;
         // Silent background fetch when aggressive sleep is on, or when running as a
         // showcase cell — keep the current image visible until the new one arrives.
         boolean silentFetch = (ApiPrefs.isSuperSleep(this) && ApiPrefs.isAllowSleep(this) && !menuVisible)
@@ -1090,7 +1108,26 @@ public class DisplayActivity extends Activity {
         String httpsUrl = resolveApiBaseUrl() + API_DISPLAY_PATH;
         logD("fetch reason=" + fetchReason + " wifi=" + getWifiStateString());
         logD("start: " + httpsUrl);
-        ApiFetchTask.start(this, httpsUrl, resolveApiId(), resolveApiToken());
+        currentFetchTask = ApiFetchTask.start(
+                this,
+                httpsUrl,
+                resolveApiId(),
+                resolveApiToken(),
+                fetchToken);
+        if (currentFetchTask == null) {
+            logW("fetch task did not start");
+            clearActiveFetch(true);
+            if (menuVisible) {
+                showMenuStatus("Fetch failed - tap Next to retry", true);
+                forceFullRefresh();
+            } else {
+                if (showcaseStatusView != null) showcaseStatusView.setVisibility(View.GONE);
+                logD("next display in " + (refreshMs / 1000L) + "s");
+                scheduleNextCycle();
+            }
+            return;
+        }
+        armFetchWatchdog(fetchToken);
     }
 
     private String getWifiStateString() {
@@ -1102,6 +1139,66 @@ public class DisplayActivity extends Activity {
         int ip = info.getIpAddress();
         if (ip == 0) return "on/no-ip";
         return "connected";
+    }
+
+    private void cancelFetchWatchdog() {
+        if (pendingFetchWatchdogRunnable != null) {
+            refreshHandler.removeCallbacks(pendingFetchWatchdogRunnable);
+            pendingFetchWatchdogRunnable = null;
+        }
+    }
+
+    private void clearActiveFetch(boolean invalidateToken) {
+        cancelFetchWatchdog();
+        currentFetchTask = null;
+        fetchInProgress = false;
+        fetchStartedFromMenu = false;
+        if (invalidateToken) {
+            activeFetchToken++;
+        }
+    }
+
+    private void armFetchWatchdog(final int fetchToken) {
+        cancelFetchWatchdog();
+        pendingFetchWatchdogRunnable = new Runnable() {
+            @Override
+            public void run() {
+                pendingFetchWatchdogRunnable = null;
+                if (!fetchInProgress || fetchToken != activeFetchToken) {
+                    return;
+                }
+
+                final boolean fromMenu = fetchStartedFromMenu;
+                logW("fetch watchdog fired after " + (FETCH_WATCHDOG_MS / 1000L) + "s; abandoning stuck fetch");
+                if (currentFetchTask != null) {
+                    try {
+                        currentFetchTask.cancel(true);
+                    } catch (Throwable t) {
+                        logW("fetch watchdog cancel failed: " + t);
+                    }
+                }
+                clearActiveFetch(true);
+                hideNoWifiOverlay();
+                if (showcaseStatusView != null) showcaseStatusView.setVisibility(View.GONE);
+
+                if (fromMenu) {
+                    showMenuStatus("Fetch timed out - tap Next to retry", true);
+                    forceFullRefresh();
+                } else if (lastDisplayedImage == null) {
+                    setBootStatus("Fetch timed out - tap to retry");
+                    if (bootLayout != null) bootLayout.setVisibility(View.VISIBLE);
+                    if (imageView != null) imageView.setVisibility(View.GONE);
+                    if (imageRotateLayout != null) imageRotateLayout.setVisibility(View.GONE);
+                    if (contentScroll != null) contentScroll.setVisibility(View.GONE);
+                    if (logView != null) logView.setVisibility(View.VISIBLE);
+                    forceFullRefresh();
+                } else {
+                    logD("keeping last displayed image after timed-out fetch");
+                }
+                scheduleNextCycle();
+            }
+        };
+        refreshHandler.postDelayed(pendingFetchWatchdogRunnable, FETCH_WATCHDOG_MS);
     }
 
     /** Show "Loading..." in content area and hide log so the dialog is clean. */
@@ -1971,19 +2068,24 @@ public class DisplayActivity extends Activity {
         private final String httpsUrl;
         private final String apiId;
         private final String apiToken;
-        private ApiFetchTask(DisplayActivity activity, String httpsUrl, String apiId, String apiToken) {
+        private final int fetchToken;
+        private ApiFetchTask(DisplayActivity activity, String httpsUrl, String apiId, String apiToken, int fetchToken) {
             this.activityRef = new WeakReference(activity);
             this.httpsUrl = httpsUrl;
             this.apiId = apiId;
             this.apiToken = apiToken;
+            this.fetchToken = fetchToken;
         }
 
-        public static void start(DisplayActivity activity, String httpsUrl, String apiId, String apiToken) {
-            if (activity == null || httpsUrl == null) return;
+        public static ApiFetchTask start(DisplayActivity activity, String httpsUrl, String apiId, String apiToken, int fetchToken) {
+            if (activity == null || httpsUrl == null) return null;
+            ApiFetchTask task = new ApiFetchTask(activity, httpsUrl, apiId, apiToken, fetchToken);
             try {
-                new ApiFetchTask(activity, httpsUrl, apiId, apiToken).execute(new Object[] { httpsUrl });
+                task.execute(new Object[] { httpsUrl });
+                return task;
             } catch (Throwable t) {
                 activity.logE("fetch start failed", t);
+                return null;
             }
         }
 
@@ -2146,10 +2248,21 @@ public class DisplayActivity extends Activity {
         protected void onPostExecute(Object result) {
             final DisplayActivity a = (DisplayActivity) activityRef.get();
             if (a == null || a.contentView == null) return;
+            if (fetchToken != a.activeFetchToken) {
+                a.logD("ignoring stale fetch result token=" + fetchToken + " active=" + a.activeFetchToken);
+                if (a.currentFetchTask == this) {
+                    a.currentFetchTask = null;
+                }
+                return;
+            }
 
+            a.cancelFetchWatchdog();
             a.fetchInProgress = false;
             final boolean fromMenu = a.fetchStartedFromMenu;
             a.fetchStartedFromMenu = false;
+            if (a.currentFetchTask == this) {
+                a.currentFetchTask = null;
+            }
             if (result instanceof ApiResult) {
                 ApiResult ar = (ApiResult) result;
                 if (ar.showImage && ar.bitmap != null) {
