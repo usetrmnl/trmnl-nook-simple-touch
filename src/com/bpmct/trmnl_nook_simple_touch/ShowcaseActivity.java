@@ -50,6 +50,18 @@ public class ShowcaseActivity extends Activity {
         return token != null && token.length() > 0;
     }
 
+    /**
+     * Returns true if only cell 0 is configured and cells 1–3 are all unconfigured.
+     * In this case the app should skip the 2×2 grid and go straight to cell 0 fullscreen.
+     */
+    static boolean isOnlyCell0Configured(Context context) {
+        if (!isCellConfigured(context, 0)) return false;
+        for (int i = 1; i < NUM_CELLS; i++) {
+            if (isCellConfigured(context, i)) return false;
+        }
+        return true;
+    }
+
     private static final int APP_ROTATION_DEGREES = 90;
     static final int NUM_CELLS = 4;
     private static final int CELL_PADDING = 6;
@@ -132,6 +144,23 @@ public class ShowcaseActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT));
 
         setContentView(appRotateLayout);
+
+        // If only cell 0 is configured, skip the grid and go fullscreen immediately
+        if (isOnlyCell0Configured(this)) {
+            Intent i = new Intent(this, DisplayActivity.class);
+            i.putExtra(DisplayActivity.EXTRA_SHOWCASE_API_ID,    getCellId(this, 0));
+            i.putExtra(DisplayActivity.EXTRA_SHOWCASE_API_TOKEN, getCellToken(this, 0));
+            i.putExtra(DisplayActivity.EXTRA_SHOWCASE_API_URL,   getCellApiUrl(this, 0));
+            i.putExtra(DisplayActivity.EXTRA_SHOWCASE_CELL,      0);
+            Bitmap cached = loadCachedBitmap(this, 0);
+            if (cached != null) {
+                java.io.File f = new java.io.File(getFilesDir(), CACHE_PREFIX + "0.png");
+                if (f.exists()) i.putExtra(DisplayActivity.EXTRA_SHOWCASE_PRELOAD_PATH, f.getAbsolutePath());
+            }
+            startActivity(i);
+            finish();
+            return;
+        }
 
         loadCachedBitmaps();
         if (!anyCacheExists()) startFetchAll();

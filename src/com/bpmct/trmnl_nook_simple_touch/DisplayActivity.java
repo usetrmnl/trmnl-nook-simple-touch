@@ -458,8 +458,19 @@ public class DisplayActivity extends Activity {
             showGiftModeScreen();
             return;
         } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)) {
-            startActivity(new Intent(this, ShowcaseActivity.class));
-            finish();
+            if (ShowcaseActivity.isOnlyCell0Configured(this)) {
+                // Single cell configured — launch it fullscreen directly, skip the grid
+                Intent si = new Intent(this, DisplayActivity.class);
+                si.putExtra(EXTRA_SHOWCASE_API_ID,    ShowcaseActivity.getCellId(this, 0));
+                si.putExtra(EXTRA_SHOWCASE_API_TOKEN, ShowcaseActivity.getCellToken(this, 0));
+                si.putExtra(EXTRA_SHOWCASE_API_URL,   ShowcaseActivity.getCellApiUrl(this, 0));
+                si.putExtra(EXTRA_SHOWCASE_CELL,      0);
+                startActivity(si);
+                finish();
+            } else {
+                startActivity(new Intent(this, ShowcaseActivity.class));
+                finish();
+            }
             return;
         } else if (!isShowcaseCell() && ApiPrefs.isGiftModeEnabled(this)) {
             showGiftModeScreen();
@@ -525,8 +536,18 @@ public class DisplayActivity extends Activity {
             showGiftModeScreen();
             return;
         } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)) {
-            startActivity(new Intent(this, ShowcaseActivity.class));
-            finish();
+            if (ShowcaseActivity.isOnlyCell0Configured(this)) {
+                Intent si = new Intent(this, DisplayActivity.class);
+                si.putExtra(EXTRA_SHOWCASE_API_ID,    ShowcaseActivity.getCellId(this, 0));
+                si.putExtra(EXTRA_SHOWCASE_API_TOKEN, ShowcaseActivity.getCellToken(this, 0));
+                si.putExtra(EXTRA_SHOWCASE_API_URL,   ShowcaseActivity.getCellApiUrl(this, 0));
+                si.putExtra(EXTRA_SHOWCASE_CELL,      0);
+                startActivity(si);
+                finish();
+            } else {
+                startActivity(new Intent(this, ShowcaseActivity.class));
+                finish();
+            }
             return;
         } else if (!isShowcaseCell() && ApiPrefs.isGiftModeEnabled(this)) {
             showGiftModeScreen();
