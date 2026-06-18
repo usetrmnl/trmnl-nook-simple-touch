@@ -124,7 +124,6 @@ public class DisplayActivity extends Activity {
     private Runnable pendingConnectivityTimeoutRunnable;
     private Runnable pendingFetchWatchdogRunnable;
     private ApiFetchTask currentFetchTask;
-    private static final long CONNECTIVITY_MAX_WAIT_MS = 5 * 1000;
     /** Longer wait used when the WiFi radio is still powering on (cold enable after
      * sleep). On Android 2.1 the OMAP3 radio can take several seconds just to reach
      * ENABLED, before association + DHCP even begin, so 5s is not enough. */
@@ -645,7 +644,8 @@ public class DisplayActivity extends Activity {
         return true;
     }
 
-    /** Wait for network to come up, then start fetch. Starts as soon as connectivity appears; max wait CONNECTIVITY_MAX_WAIT_MS. */
+    /** Wait for network to come up, then start fetch. Starts as soon as connectivity appears;
+     *  max wait is ApiPrefs.getWifiConnectTimeoutSeconds() (configurable, default 5s). */
     private void waitForWifiThenFetch() {
         cancelConnectivityWait();
         if (isConnectedToNetwork(this)) {
@@ -660,10 +660,13 @@ public class DisplayActivity extends Activity {
         }
         final DisplayActivity a = this;
         WifiManager wm = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+        // User-configurable association timeout (issue #44). Default preserves the
+        // historical 5s behavior; users on slow/busy APs can raise it.
+        long configuredWaitMs = ApiPrefs.getWifiConnectTimeoutSeconds(this) * 1000L;
         // Default association wait. When the radio is still powering on (just
         // requested ON during the wake path), use a longer window so we don't give
         // up before the radio even reaches ENABLED.
-        long associationWaitMs = CONNECTIVITY_MAX_WAIT_MS;
+        long associationWaitMs = configuredWaitMs;
         // WiFi radio handling. setWifiEnabled(true) is asynchronous: on wake we ask
         // the radio to turn on, then call this method almost immediately, so the
         // radio is usually still in WIFI_STATE_ENABLING here. Treating that as
@@ -682,8 +685,9 @@ public class DisplayActivity extends Activity {
             }
             if (wifiState == WifiManager.WIFI_STATE_ENABLING) {
                 // Radio is coming up from a cold start — give it room to finish
-                // enabling, associate, and obtain DHCP before we time out.
-                associationWaitMs = CONNECTIVITY_COLD_RADIO_WAIT_MS;
+                // enabling, associate, and obtain DHCP before we time out. Honor a
+                // longer user-configured timeout if set.
+                associationWaitMs = Math.max(configuredWaitMs, CONNECTIVITY_COLD_RADIO_WAIT_MS);
                 logD("wifi radio enabling — waiting for it to come up");
             } else if (wifiState == WifiManager.WIFI_STATE_DISABLED
                     || wifiState == WifiManager.WIFI_STATE_DISABLING
@@ -694,7 +698,7 @@ public class DisplayActivity extends Activity {
                 if (ApiPrefs.isAllowSleep(this)) {
                     try {
                         wm.setWifiEnabled(true);
-                        associationWaitMs = CONNECTIVITY_COLD_RADIO_WAIT_MS;
+                        associationWaitMs = Math.max(configuredWaitMs, CONNECTIVITY_COLD_RADIO_WAIT_MS);
                         logD("wifi radio off — turning it on and waiting for connection");
                     } catch (Throwable t) {
                         logW("wifi enable failed: " + t);
@@ -747,11 +751,12 @@ public class DisplayActivity extends Activity {
             return;
         }
         // Hard timeout — show no-wifi screen then schedule a retry so we don't get stuck.
+        final long waitMs = associationWaitMs;
         pendingConnectivityTimeoutRunnable = new Runnable() {
             @Override public void run() {
                 pendingConnectivityTimeoutRunnable = null;
                 if (!isConnectedToNetwork(a)) {
-                    logD("connectivity timeout (" + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s) wifi=" + a.getWifiStateString() + " — showing no-wifi screen");
+                    logD("connectivity timeout (" + (waitMs / 1000L) + "s) wifi=" + a.getWifiStateString() + " — showing no-wifi screen");
                     cancelConnectivityWait();
                     if (attemptWifiRecovery("connectivity timeout")) {
                         return;
@@ -762,7 +767,6 @@ public class DisplayActivity extends Activity {
                 }
             }
         };
-        final long waitMs = associationWaitMs;
         refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, waitMs);
         logD("not connected — waiting up to " + (waitMs / 1000L) + "s for association");
     }

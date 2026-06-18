@@ -23,6 +23,13 @@ public class ApiPrefs {
     private static final String KEY_SUPER_SLEEP = "super_sleep";
     private static final String KEY_SCREENSAVER_WRITTEN = "screensaver_written_once";
     private static final String KEY_SHOWCASE_MODE = "showcase_mode";
+    private static final String KEY_WIFI_CONNECT_TIMEOUT = "wifi_connect_timeout_seconds";
+    /** Default association timeout (seconds). Matches the historical CONNECTIVITY_MAX_WAIT_MS (5s). */
+    public static final int DEFAULT_WIFI_CONNECT_TIMEOUT_SECONDS = 5;
+    /** Clamp bounds so a bad value can't brick the wake cycle (too short = never connects,
+     *  too long = battery drain waiting on a dead network). */
+    public static final int MIN_WIFI_CONNECT_TIMEOUT_SECONDS = 5;
+    public static final int MAX_WIFI_CONNECT_TIMEOUT_SECONDS = 120;
     private static final String SCREENSAVER_PATH = "/media/screensavers/TRMNL/display.png";
 
     public static boolean hasCredentials(Context context) {
@@ -339,6 +346,29 @@ public class ApiPrefs {
     public static void setSuperSleep(Context context, boolean enabled) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean(KEY_SUPER_SLEEP, enabled).commit();
+    }
+
+    /**
+     * WiFi association timeout in seconds. This is how long the app waits for the
+     * network to come up after a wake before giving up and showing the no-WiFi
+     * screen. Some access points / busy 2.4GHz environments take longer than the
+     * 5s default to associate (see issue #44), so this is user-configurable.
+     * Returned value is clamped to [MIN, MAX]. Default is
+     * DEFAULT_WIFI_CONNECT_TIMEOUT_SECONDS (preserves prior behavior).
+     */
+    public static int getWifiConnectTimeoutSeconds(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        int seconds = prefs.getInt(KEY_WIFI_CONNECT_TIMEOUT, DEFAULT_WIFI_CONNECT_TIMEOUT_SECONDS);
+        if (seconds < MIN_WIFI_CONNECT_TIMEOUT_SECONDS) seconds = MIN_WIFI_CONNECT_TIMEOUT_SECONDS;
+        if (seconds > MAX_WIFI_CONNECT_TIMEOUT_SECONDS) seconds = MAX_WIFI_CONNECT_TIMEOUT_SECONDS;
+        return seconds;
+    }
+
+    public static void setWifiConnectTimeoutSeconds(Context context, int seconds) {
+        if (seconds < MIN_WIFI_CONNECT_TIMEOUT_SECONDS) seconds = MIN_WIFI_CONNECT_TIMEOUT_SECONDS;
+        if (seconds > MAX_WIFI_CONNECT_TIMEOUT_SECONDS) seconds = MAX_WIFI_CONNECT_TIMEOUT_SECONDS;
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putInt(KEY_WIFI_CONNECT_TIMEOUT, seconds).commit();
     }
 
     /** Whether the initial screensaver has been written to disk at least once. */

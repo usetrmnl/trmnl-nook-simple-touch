@@ -15,6 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.ScrollView;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -36,6 +37,7 @@ public class SettingsActivity extends Activity {
     private CheckBox allowHttpCheck;
     private CheckBox allowSelfSignedCheck;
     private CheckBox autoDisableWifiCheck;
+    private EditText wifiTimeoutInput;
     private TextView wifiStatusView;
     private FrameLayout rootLayout;
     private FrameLayout outerRoot;
@@ -296,6 +298,37 @@ public class SettingsActivity extends Activity {
         wifiHint.setPadding(40, 0, 0, 0);
         panelNetwork.addView(wifiHint);
 
+        TextView wifiTimeoutLabel = new TextView(this);
+        wifiTimeoutLabel.setText("WiFi connect timeout (seconds)");
+        wifiTimeoutLabel.setTextColor(0xFF000000);
+        LinearLayout.LayoutParams wifiTimeoutLabelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wifiTimeoutLabelParams.topMargin = 12;
+        panelNetwork.addView(wifiTimeoutLabel, wifiTimeoutLabelParams);
+
+        wifiTimeoutInput = new EditText(this);
+        wifiTimeoutInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        wifiTimeoutInput.setTextColor(0xFF000000);
+        wifiTimeoutInput.setText(String.valueOf(ApiPrefs.getWifiConnectTimeoutSeconds(this)));
+        LinearLayout.LayoutParams wifiTimeoutInputParams = new LinearLayout.LayoutParams(
+                160, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wifiTimeoutInputParams.topMargin = 4;
+        panelNetwork.addView(wifiTimeoutInput, wifiTimeoutInputParams);
+
+        TextView wifiTimeoutHint = new TextView(this);
+        wifiTimeoutHint.setText("How long to wait for WiFi to connect on wake before "
+                + "giving up. Raise this if your network is slow to join ("
+                + ApiPrefs.MIN_WIFI_CONNECT_TIMEOUT_SECONDS + "\u2013"
+                + ApiPrefs.MAX_WIFI_CONNECT_TIMEOUT_SECONDS + "s, default "
+                + ApiPrefs.DEFAULT_WIFI_CONNECT_TIMEOUT_SECONDS + "s).");
+        wifiTimeoutHint.setTextSize(11);
+        wifiTimeoutHint.setTextColor(0xFF888888);
+        wifiTimeoutHint.setPadding(0, 0, 0, 0);
+        LinearLayout.LayoutParams wifiTimeoutHintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wifiTimeoutHintParams.topMargin = 2;
+        panelNetwork.addView(wifiTimeoutHint, wifiTimeoutHintParams);
+
         main.addView(panelNetwork);
 
         // ── Panel: System ────────────────────────────────────────────────────
@@ -543,6 +576,7 @@ public class SettingsActivity extends Activity {
         if (allowHttpCheck != null) allowHttpCheck.setChecked(ApiPrefs.isAllowHttp(this));
         if (allowSelfSignedCheck != null) allowSelfSignedCheck.setChecked(ApiPrefs.isAllowSelfSignedCerts(this));
         if (autoDisableWifiCheck != null) autoDisableWifiCheck.setChecked(ApiPrefs.isAutoDisableWifi(this));
+        if (wifiTimeoutInput != null) wifiTimeoutInput.setText(String.valueOf(ApiPrefs.getWifiConnectTimeoutSeconds(this)));
         if (wifiStatusView != null) wifiStatusView.setText(getWifiStatusText());
     }
 
@@ -563,5 +597,15 @@ public class SettingsActivity extends Activity {
         if (allowHttpCheck != null) ApiPrefs.setAllowHttp(this, allowHttpCheck.isChecked());
         if (allowSelfSignedCheck != null) ApiPrefs.setAllowSelfSignedCerts(this, allowSelfSignedCheck.isChecked());
         if (autoDisableWifiCheck != null) ApiPrefs.setAutoDisableWifi(this, autoDisableWifiCheck.isChecked());
+        if (wifiTimeoutInput != null) {
+            String raw = wifiTimeoutInput.getText() != null ? wifiTimeoutInput.getText().toString().trim() : "";
+            if (raw.length() > 0) {
+                try {
+                    ApiPrefs.setWifiConnectTimeoutSeconds(this, Integer.parseInt(raw));
+                } catch (NumberFormatException nfe) {
+                    // Leave the existing value untouched on bad input.
+                }
+            }
+        }
     }
 }
