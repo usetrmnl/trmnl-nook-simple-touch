@@ -125,6 +125,10 @@ public class DisplayActivity extends Activity {
     private Runnable pendingFetchWatchdogRunnable;
     private ApiFetchTask currentFetchTask;
     private static final long CONNECTIVITY_MAX_WAIT_MS = 5 * 1000;
+    /** Longer wait used when the WiFi radio is still powering on (cold enable after
+     * sleep). On Android 2.1 the OMAP3 radio can take several seconds just to reach
+     * ENABLED, before association + DHCP even begin, so 5s is not enough. */
+    private static final long CONNECTIVITY_COLD_RADIO_WAIT_MS = 20 * 1000;
     private volatile int wifiRecoveryAttempts = 0;
 
     @Override
@@ -656,12 +660,55 @@ public class DisplayActivity extends Activity {
         }
         final DisplayActivity a = this;
         WifiManager wm = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-        // If WiFi radio is off entirely, nothing to wait for — show overlay immediately.
-        if (wm != null && !wm.isWifiEnabled()) {
-            logD("wifi radio off — showing no-wifi screen immediately");
-            showNoWifiScreen();
-            scheduleNextCycle();
-            return;
+        // Default association wait. When the radio is still powering on (just
+        // requested ON during the wake path), use a longer window so we don't give
+        // up before the radio even reaches ENABLED.
+        long associationWaitMs = CONNECTIVITY_MAX_WAIT_MS;
+        // WiFi radio handling. setWifiEnabled(true) is asynchronous: on wake we ask
+        // the radio to turn on, then call this method almost immediately, so the
+        // radio is usually still in WIFI_STATE_ENABLING here. Treating that as
+        // "radio off — give up" is the bug behind #44: the device would wake, never
+        // wait for WiFi, and sleep again without ever fetching. Only show the
+        // no-wifi screen when the radio is genuinely disabled AND we cannot turn it
+        // back on; otherwise fall through and wait for connectivity.
+        if (wm != null) {
+            int wifiState = WifiManager.WIFI_STATE_UNKNOWN;
+            try {
+                wifiState = wm.getWifiState();
+            } catch (Throwable t) {
+                wifiState = wm.isWifiEnabled()
+                        ? WifiManager.WIFI_STATE_ENABLED
+                        : WifiManager.WIFI_STATE_DISABLED;
+            }
+            if (wifiState == WifiManager.WIFI_STATE_ENABLING) {
+                // Radio is coming up from a cold start — give it room to finish
+                // enabling, associate, and obtain DHCP before we time out.
+                associationWaitMs = CONNECTIVITY_COLD_RADIO_WAIT_MS;
+                logD("wifi radio enabling — waiting for it to come up");
+            } else if (wifiState == WifiManager.WIFI_STATE_DISABLED
+                    || wifiState == WifiManager.WIFI_STATE_DISABLING
+                    || wifiState == WifiManager.WIFI_STATE_UNKNOWN) {
+                // Genuinely off. In sleep/auto-disable mode the wake path is
+                // responsible for turning the radio on, so try once here rather than
+                // immediately surrendering to the no-wifi screen.
+                if (ApiPrefs.isAllowSleep(this)) {
+                    try {
+                        wm.setWifiEnabled(true);
+                        associationWaitMs = CONNECTIVITY_COLD_RADIO_WAIT_MS;
+                        logD("wifi radio off — turning it on and waiting for connection");
+                    } catch (Throwable t) {
+                        logW("wifi enable failed: " + t);
+                        showNoWifiScreen();
+                        scheduleNextCycle();
+                        return;
+                    }
+                } else {
+                    logD("wifi radio off — showing no-wifi screen immediately");
+                    showNoWifiScreen();
+                    scheduleNextCycle();
+                    return;
+                }
+            }
         }
         // Fast-path: WiFi is on and already has an IP — just fetch now.
         if (wm != null && wm.isWifiEnabled()) {
@@ -715,8 +762,9 @@ public class DisplayActivity extends Activity {
                 }
             }
         };
-        refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, CONNECTIVITY_MAX_WAIT_MS);
-        logD("not connected — waiting up to " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s for association");
+        final long waitMs = associationWaitMs;
+        refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, waitMs);
+        logD("not connected — waiting up to " + (waitMs / 1000L) + "s for association");
     }
 
     private void cancelConnectivityWait() {

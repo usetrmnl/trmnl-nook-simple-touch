@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.15.0] - 2026-06-17
+
+### Fixed
+- **Wi-Fi no longer fails to reconnect after waking from sleep** - On wake the app turns the Wi-Fi radio on and then immediately checks whether it is enabled, but `setWifiEnabled()` is asynchronous and the radio is usually still powering on at that moment. The app treated that "still enabling" state as "radio off, nothing to wait for", showed the "This smart device needs WiFi" screen, and went back to sleep without ever polling the server (#44). The wake path now distinguishes a radio that is still enabling from one that is genuinely off: it waits for the radio to come up and associate (and re-enables it when sleep mode left it off) instead of giving up immediately.
+
+### Added
+- **Configurable Wi-Fi connect timeout** (`Settings → Network → WiFi connect timeout`) - How long the device waits for Wi-Fi to associate on wake before giving up. The default is 5 s (unchanged behavior); raise it if your access point or busy 2.4 GHz environment is slow to join. Clamped to 5–120 s.
+
+---
+
 ## [v0.13.2] - 2026-04-22
 
 ### Fixed
