@@ -358,6 +358,28 @@ get_settings() {
   adb_target shell cat "${PREFS_FILE}"
 }
 
+# Writing PREFS_FILE over adb runs as root (uid 0 on NST), which leaves
+# shared_prefs/ owned by root. The app runs as its own uid and then cannot
+# persist SharedPreferences writes (the dir isn't writable by the app), so
+# in-app settings changes silently revert on the next app restart. Restore
+# ownership/permissions to the app uid after any root write.
+fix_prefs_owner() {
+  local prefs_dir="/data/data/${APP_PKG}/shared_prefs"
+  local owner
+  owner="$(adb_target shell "ls -l /data/data" 2>/dev/null \
+            | tr -d '\r' | awk -v p="${APP_PKG}" '$NF==p {print $3}')"
+  if [[ -z "${owner}" ]]; then
+    echo "warning: could not determine app uid; prefs left owned by root" \
+         "(the app may not persist settings changes)" >&2
+    return 0
+  fi
+  # NST toolbox chown: no -R, '.' separator.
+  adb_target shell chown "${owner}.${owner}" "${prefs_dir}"  2>/dev/null || true
+  adb_target shell chown "${owner}.${owner}" "${PREFS_FILE}" 2>/dev/null || true
+  adb_target shell chmod 771 "${prefs_dir}"  2>/dev/null || true
+  adb_target shell chmod 660 "${PREFS_FILE}" 2>/dev/null || true
+}
+
 set_settings() {
   local src="${1:-}"
   [[ -n "${src}" ]] || die "set-settings requires --file /path/to/prefs.xml"
@@ -366,6 +388,7 @@ set_settings() {
   local tmp="/data/local/tmp/trmnl_prefs.xml"
   adb_target push "${src}" "${tmp}" >/dev/null
   adb_target shell "cat \"${tmp}\" > \"${PREFS_FILE}\""
+  fix_prefs_owner
   echo "Settings written."
   get_settings
 }
@@ -415,6 +438,7 @@ EOF
 
   adb_target push "${tmp_local}" "${tmp_remote}" >/dev/null
   adb_target shell "cat \"${tmp_remote}\" > \"${PREFS_FILE}\""
+  fix_prefs_owner
   rm -f "${tmp_local}"
   echo "Settings updated."
   get_settings
