@@ -30,7 +30,7 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 - [Disclaimer](#disclaimer)
 
 ## Prerequisites
-- Root the device using the [Phoenix Project](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/). I used "phase 4" (the minimal rooted install for customization). The phases were confusing because you do not need phase 1/2/3 (each is a separate backup).
+- Root the device using the [Phoenix Project](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/). I used "phase 4" (the minimal rooted install for customization). The phases were confusing because you do not need phase 1/2/3 (each is a separate backup). Phase 4 comes in two firmware flavors — this app is developed and tested against **FW 1.2.2** (`NST_Phase4_122.zip`), so prefer that one. The FW 1.1.5 image may behave differently (the Phoenix author notes the e-ink controller code differs between firmware versions).
 - Buy a [TRMNL BYOD license](https://shop.usetrmnl.com/collections/frontpage/products/byod) and grab your SSID + API key from Developer Settings after login (or use your own server).
 
 ## Install
