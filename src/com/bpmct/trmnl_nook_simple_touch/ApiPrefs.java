@@ -22,6 +22,7 @@ public class ApiPrefs {
     private static final String KEY_AUTO_DISABLE_WIFI = "auto_disable_wifi";
     private static final String KEY_SUPER_SLEEP = "super_sleep";
     private static final String KEY_SCREENSAVER_WRITTEN = "screensaver_written_once";
+    private static final String KEY_SAVED_SCREEN_TIMEOUT = "saved_screen_timeout_ms";
     private static final String KEY_SHOWCASE_MODE = "showcase_mode";
     private static final String KEY_WIFI_CONNECT_TIMEOUT = "wifi_connect_timeout_seconds";
     /** Default association timeout (seconds). Matches the historical CONNECTIVITY_MAX_WAIT_MS (5s). */
@@ -131,6 +132,18 @@ public class ApiPrefs {
     /** File path for screensaver image (hardcoded for NOOK). */
     public static String getScreensaverPath() {
         return SCREENSAVER_PATH;
+    }
+
+    /** The user's original SCREEN_OFF_TIMEOUT captured before the app ever overrides it
+     * for forced sleep. 0 = never captured. */
+    public static int getSavedScreenTimeout(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getInt(KEY_SAVED_SCREEN_TIMEOUT, 0);
+    }
+
+    public static void setSavedScreenTimeout(Context context, int timeoutMs) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit().putInt(KEY_SAVED_SCREEN_TIMEOUT, timeoutMs).commit();
     }
 
     public static boolean isGiftModeEnabled(Context context) {

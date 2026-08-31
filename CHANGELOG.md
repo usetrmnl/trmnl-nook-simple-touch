@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.16.0] - 2026-08-31
+
+### Fixed
+- **The device can no longer get stuck locking every few seconds after the app closes** (#50) - Forced sleep temporarily sets the system screen timeout to 1 second. If the app process was killed while the device was asleep, that value was stranded in the system settings (and survives reboots), locking the whole device a few seconds after every touch until the screensaver timeout was manually re-saved in the NOOK Settings. The app now captures your original timeout before overriding it, restores it the moment the screen turns off, restores it on exit, and self-heals at launch if a previous run left a stranded value. It also no longer overwrites your configured timeout with a hardcoded 2 minutes.
+- **Normal sleep mode now reliably sleeps** (#49) - With aggressive sleep off, the app used to release the screen and rely on the device's own screensaver timeout to blank it - on devices with long timeouts the screen could stay on all day, burning battery. The app now forces sleep after 2 minutes without interaction following each update (tapping the screen resets the countdown, preserving the interaction window).
+- **Screensaver updates retry when USB storage comes back** (#42) - When a computer mounts the NOOK's USB storage, `/media` is unmounted on-device and screensaver writes fail. Failed writes are now remembered and retried automatically as soon as storage returns, and the log message explains the cause. Duplicate writes of the same image are also skipped.
+- **Docs:** AGENTS.md incorrectly described the device as Android 2.3 (Gingerbread) / API 10 - it is Android 2.1 (Eclair) / API 7 (#51).
+
+### Added
+- **Exit button** (#48) - The tap menu now has an Exit button that cancels the refresh alarm, restores your screen timeout, and closes the app.
+
+---
+
 ## [v0.15.0] - 2026-06-17
 
 ### Fixed

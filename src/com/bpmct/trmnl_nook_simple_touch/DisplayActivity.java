@@ -70,6 +70,17 @@ public class DisplayActivity extends Activity {
     /** Delay after showing API image before writing screensaver and going to sleep (show picture, then screensaver, then sleep full interval). */
     private static final long SCREENSAVER_DELAY_MS = 2 * 1000;
     private static final long WIFI_RECOVERY_TOGGLE_DELAY_MS = 2 * 1000;
+    /** Timeout written to force the natural screen-off path during sleep (see AGENTS.md). */
+    private static final int FORCED_SLEEP_TIMEOUT_MS = 1000;
+    /** Timeouts at or below this are our own forced-sleep leftovers, never the user's real setting. */
+    private static final int MIN_SANE_SCREEN_TIMEOUT_MS = 2000;
+    /** Restore fallback when we never captured the user's original timeout (NOOK default: 2 min). */
+    private static final int DEFAULT_SCREEN_TIMEOUT_MS = 120000;
+    /** In normal (non-aggressive) sleep mode, force sleep after this much idle time following
+     * sleep-ready — instead of depending on the device's own screensaver timeout, which may
+     * be 15m+ (or effectively never), leaving the screen on all day (#49). 2 min matches the
+     * long-documented "device sleeps within 2 minutes" behavior. */
+    private static final long IDLE_FORCED_SLEEP_MS = 2 * 60 * 1000;
     private TextView contentView;
     private TextView logView;
     private ImageView imageView;
@@ -86,6 +97,7 @@ public class DisplayActivity extends Activity {
     private TextView batteryView;
     private Button nextButton;
     private Button settingsButton;
+    private Button exitButton;
     private Button customizeButton;
     private TextView loadingStatusView;
     private TextView showcaseStatusView;
@@ -114,6 +126,18 @@ public class DisplayActivity extends Activity {
     private PendingIntent alarmPendingIntent;
     private BroadcastReceiver alarmReceiver;
     private BroadcastReceiver connectivityReceiver;
+    /** Restores the user's screen timeout the moment the screen turns off, so a killed
+     * process can never strand the forced 1s value in settings.db (#50). */
+    private BroadcastReceiver screenOffReceiver;
+    /** Retries a failed screensaver write when /media comes back (USB storage ejected on the computer) (#42). */
+    private BroadcastReceiver mediaMountedReceiver;
+    private Runnable pendingIdleSleepRunnable;
+    /** Bitmap whose screensaver write failed (e.g. /media unmounted while USB mass storage
+     * is mounted on a computer); retried on media-mounted broadcast and on resume (#42). */
+    private Bitmap pendingScreensaverBitmap;
+    /** Last bitmap successfully written to the screensaver path — repeat writes of the
+     * same image are skipped (#49). */
+    private Bitmap lastWrittenScreensaverBitmap;
     private Runnable pendingSleepRunnable;
     private Runnable pendingScreenOffRunnable;
     /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON
@@ -141,6 +165,10 @@ public class DisplayActivity extends Activity {
                 + " super_sleep=" + ApiPrefs.isSuperSleep(this)
                 + " auto_disable_wifi=" + ApiPrefs.isAutoDisableWifi(this)
                 + " allow_http=" + ApiPrefs.isAllowHttp(this));
+
+        // Remember the user's real screen timeout (and self-heal if a previous run
+        // stranded the forced 1s value in the system settings) (#50).
+        captureOriginalScreenTimeout();
 
         // Write the generic screensaver on first-ever launch so NOOK shows something
         // branded if it sleeps before any API image has been displayed.
@@ -343,6 +371,31 @@ public class DisplayActivity extends Activity {
         settingsParams.leftMargin = 6;
         menuLayout.addView(settingsButton, settingsParams);
 
+        exitButton = new Button(this);
+        exitButton.setText("Exit");
+        exitButton.setTextColor(0xFF000000);
+        exitButton.setClickable(true);
+        exitButton.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    logD("menu: exit tapped");
+                    exitApp();
+                    return true;
+                }
+                return false;
+            }
+        });
+        exitButton.setTextSize(15);
+        exitButton.setPadding(4, 0, 4, 0);
+        exitButton.setMinHeight(0);
+        exitButton.setMinimumHeight(0);
+        exitButton.setMinWidth(0);
+        exitButton.setMinimumWidth(0);
+        LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(
+                0, 40, 1.0f);
+        exitParams.leftMargin = 6;
+        menuLayout.addView(exitButton, exitParams);
+
         customizeButton = new Button(this);
         customizeButton.setText("Customize");
         customizeButton.setTextColor(0xFF000000);
@@ -455,6 +508,34 @@ public class DisplayActivity extends Activity {
         };
         registerReceiver(alarmReceiver, new IntentFilter(ALARM_REFRESH_ACTION));
 
+        // The forced-sleep trick writes SCREEN_OFF_TIMEOUT=1s and previously relied on a
+        // later onResume/onDestroy to restore it — which never runs if the process is
+        // killed while asleep, leaving the whole device locking every second (#50).
+        // Restore the user's timeout as soon as the screen actually turns off instead.
+        screenOffReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                restoreScreenTimeout();
+                logD("screen off — user screen timeout restored");
+            }
+        };
+        registerReceiver(screenOffReceiver, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+
+        // When USB mass storage is mounted on a computer, /media is unmounted on-device and
+        // screensaver writes fail. Retry the pending write once storage returns (#42).
+        mediaMountedReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (pendingScreensaverBitmap != null) {
+                    logD("media mounted — retrying screensaver write");
+                    writeScreenshotToScreensaver(pendingScreensaverBitmap);
+                }
+            }
+        };
+        IntentFilter mediaFilter = new IntentFilter(Intent.ACTION_MEDIA_MOUNTED);
+        mediaFilter.addDataScheme("file");
+        registerReceiver(mediaMountedReceiver, mediaFilter);
+
         setKeepScreenAwake(true);
 
         // Gift mode shows a static screen — never needs WiFi. But showcase cells always need WiFi.
@@ -524,13 +605,15 @@ public class DisplayActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         sleepPending = false;
-        try {
-            android.provider.Settings.System.putInt(
-                getContentResolver(),
-                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
-                120000);
-        } catch (Throwable t) { /* ignore */ }
+        // Re-capture in case the user changed their timeout while we were away,
+        // then restore it (self-heals a stranded forced-sleep value too) (#50).
+        captureOriginalScreenTimeout();
+        restoreScreenTimeout();
         setKeepScreenAwake(true);
+        // Retry a screensaver write that failed while USB storage was mounted (#42).
+        if (pendingScreensaverBitmap != null) {
+            writeScreenshotToScreensaver(pendingScreensaverBitmap);
+        }
 
         // Gift mode shows a static screen — never needs WiFi. But showcase cells always need WiFi.
         boolean wifiJustOn = (ApiPrefs.isGiftModeEnabled(this) && !isShowcaseCell()) ? false : ensureWifiOnWhenForeground();
@@ -814,6 +897,11 @@ public class DisplayActivity extends Activity {
     public void onUserInteraction() {
         super.onUserInteraction();
         ensureWifiOnWhenForeground();
+        // User is interacting — push the idle forced-sleep deadline out, like the
+        // system idle timer would.
+        if (pendingIdleSleepRunnable != null) {
+            scheduleIdleForcedSleep();
+        }
     }
 
     protected void onNewIntent(Intent intent) {
@@ -843,12 +931,11 @@ public class DisplayActivity extends Activity {
         super.onPause();
 
         // Restore screen timeout whenever we leave — user is navigating around the device.
-        try {
-            android.provider.Settings.System.putInt(
-                getContentResolver(),
-                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
-                120000);
-        } catch (Throwable t) { /* ignore */ }
+        restoreScreenTimeout();
+        if (pendingIdleSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingIdleSleepRunnable);
+            pendingIdleSleepRunnable = null;
+        }
         if (refreshRunnable != null) {
             refreshHandler.removeCallbacks(refreshRunnable);
             logD("onPause: refresh timer cancelled (fetchInProgress=" + fetchInProgress + ")");
@@ -889,12 +976,7 @@ public class DisplayActivity extends Activity {
             fetchStartedFromMenu = false;
         }
         // Safety net: always restore screen timeout in case the app dies before onResume
-        try {
-            android.provider.Settings.System.putInt(
-                getContentResolver(),
-                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
-                120000);
-        } catch (Throwable t) { /* ignore */ }
+        restoreScreenTimeout();
         try {
             if (alarmReceiver != null) {
                 unregisterReceiver(alarmReceiver);
@@ -903,7 +985,90 @@ public class DisplayActivity extends Activity {
         } catch (Throwable t) {
             Log.w(TAG, "onDestroy unregisterReceiver: " + t);
         }
+        try {
+            if (screenOffReceiver != null) {
+                unregisterReceiver(screenOffReceiver);
+                screenOffReceiver = null;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "onDestroy unregister screenOffReceiver: " + t);
+        }
+        try {
+            if (mediaMountedReceiver != null) {
+                unregisterReceiver(mediaMountedReceiver);
+                mediaMountedReceiver = null;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "onDestroy unregister mediaMountedReceiver: " + t);
+        }
         super.onDestroy();
+    }
+
+    /** Read the user's current screen timeout and remember it so we can restore it later.
+     * Values at or below MIN_SANE_SCREEN_TIMEOUT_MS are our own forced-sleep leftovers —
+     * never save those; instead restore the last known-good value (self-heal, #50). */
+    private void captureOriginalScreenTimeout() {
+        try {
+            int current = android.provider.Settings.System.getInt(
+                    getContentResolver(),
+                    android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                    DEFAULT_SCREEN_TIMEOUT_MS);
+            if (current > MIN_SANE_SCREEN_TIMEOUT_MS) {
+                if (current != ApiPrefs.getSavedScreenTimeout(this)) {
+                    ApiPrefs.setSavedScreenTimeout(this, current);
+                    logD("screen timeout captured: " + current + "ms");
+                }
+            } else {
+                logW("screen timeout was stuck at " + current + "ms (stranded by a previous sleep?) — restoring");
+                restoreScreenTimeout();
+            }
+        } catch (Throwable t) { /* ignore */ }
+    }
+
+    /** Restore the user's original screen timeout (or the NOOK default if unknown). */
+    private void restoreScreenTimeout() {
+        int value = ApiPrefs.getSavedScreenTimeout(this);
+        if (value <= MIN_SANE_SCREEN_TIMEOUT_MS) value = DEFAULT_SCREEN_TIMEOUT_MS;
+        try {
+            android.provider.Settings.System.putInt(
+                getContentResolver(),
+                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                value);
+        } catch (Throwable t) { /* ignore */ }
+    }
+
+    /** Fully exit the app: cancel the wake alarm and all pending work, restore the
+     * user's screen timeout, and finish. Without this there was no user-facing way
+     * to quit at all (#48). */
+    private void exitApp() {
+        logD("exit: cancelling wake alarm and shutting down");
+        try {
+            if (alarmManager != null && alarmPendingIntent != null) {
+                alarmManager.cancel(alarmPendingIntent);
+            }
+        } catch (Throwable t) {
+            logW("exit cancel alarm: " + t);
+        }
+        if (pendingSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingSleepRunnable);
+            pendingSleepRunnable = null;
+        }
+        if (pendingScreenOffRunnable != null) {
+            refreshHandler.removeCallbacks(pendingScreenOffRunnable);
+            pendingScreenOffRunnable = null;
+        }
+        if (pendingIdleSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingIdleSleepRunnable);
+            pendingIdleSleepRunnable = null;
+        }
+        if (refreshRunnable != null) {
+            refreshHandler.removeCallbacks(refreshRunnable);
+        }
+        cancelConnectivityWait();
+        cancelFetchWatchdog();
+        restoreScreenTimeout();
+        hideMenu();
+        finish();
     }
 
     /** Electric-Sign-style: keep screen on and show when locked, or allow sleep.
@@ -973,11 +1138,43 @@ public class DisplayActivity extends Activity {
                     WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
                     if (wifi != null) wifi.setWifiEnabled(false);
                 }
-                logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (+15s warmup = next image on time; NOOK may blank after idle, e.g. 2m)");
+                logD("sleep-ready: alarm in " + (sleepMs / 1000L) + "s (+15s warmup = next image on time)");
+                // Don't depend on the device's own screensaver timeout to blank — force
+                // sleep after a fixed idle window so long-timeout devices sleep too (#49).
+                scheduleIdleForcedSleep();
             }
         };
         refreshHandler.postDelayed(pendingSleepRunnable, SCREENSAVER_DELAY_MS);
         logD("sleep-ready in " + (SCREENSAVER_DELAY_MS / 1000L) + "s (API image stays; NOOK shows screensaver when it sleeps)");
+    }
+
+    /** Arm (or re-arm) the idle forced sleep used by normal sleep mode: after
+     * IDLE_FORCED_SLEEP_MS with no user interaction, apply the same screen-timeout
+     * trick sleepNow() uses so the device reliably blanks and shows the screensaver.
+     * Cancelled by onPause/sleepNow/exit; re-armed by onUserInteraction. */
+    private void scheduleIdleForcedSleep() {
+        if (!ApiPrefs.isAllowSleep(this)) return;
+        if (pendingIdleSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingIdleSleepRunnable);
+        }
+        pendingIdleSleepRunnable = new Runnable() {
+            public void run() {
+                pendingIdleSleepRunnable = null;
+                if (!ApiPrefs.isAllowSleep(DisplayActivity.this)) return;
+                if (fetchInProgress) return; // never blank mid-fetch; next cycle re-arms
+                logD("idle " + (IDLE_FORCED_SLEEP_MS / 1000L) + "s after sleep-ready — forcing sleep");
+                sleepPending = true;
+                try {
+                    android.provider.Settings.System.putInt(
+                        getContentResolver(),
+                        android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                        FORCED_SLEEP_TIMEOUT_MS);
+                } catch (Throwable t) {
+                    logW("idle sleep: could not set timeout: " + t);
+                }
+            }
+        };
+        refreshHandler.postDelayed(pendingIdleSleepRunnable, IDLE_FORCED_SLEEP_MS);
     }
 
     /** Show bundled generic image (res/drawable-mdpi/generic_display.jpg) and, if allow-sleep, write it as screensaver and go to sleep. */
@@ -1051,11 +1248,23 @@ public class DisplayActivity extends Activity {
         if (b != null) writeScreenshotToScreensaver(b);
     }
 
-    /** Write given bitmap to screensaver path so NOOK shows it while asleep. */
+    /** Write given bitmap to screensaver path so NOOK shows it while asleep.
+     * If /media is unavailable (USB mass storage mounted on a computer), the write is
+     * remembered and retried on media-mounted broadcast / next resume (#42). Repeat
+     * writes of the same bitmap are skipped (#49). */
     private void writeScreenshotToScreensaver(Bitmap bitmap) {
         if (bitmap == null) return;
         String path = ApiPrefs.getScreensaverPath();
         if (path == null || path.length() == 0) return;
+        // Dedupe: this exact bitmap is already on disk — nothing to do.
+        if (bitmap == lastWrittenScreensaverBitmap) {
+            try {
+                if (new File(path).exists()) {
+                    logD("screensaver unchanged — skipping write");
+                    return;
+                }
+            } catch (Throwable t) { /* fall through to write */ }
+        }
         String dirPath = path;
         int lastSlash = dirPath.lastIndexOf('/');
         if (lastSlash >= 0) dirPath = dirPath.substring(0, lastSlash);
@@ -1064,7 +1273,9 @@ public class DisplayActivity extends Activity {
             if (!dir.exists()) {
                 boolean created = dir.mkdirs();
                 if (!created) {
-                    logW("screensaver mkdir failed (skipping write): " + dirPath);
+                    logW("screensaver mkdir failed (skipping write): " + dirPath
+                            + " — is the NOOK's USB storage mounted on a computer? Will retry when storage returns");
+                    pendingScreensaverBitmap = bitmap;
                     return;
                 }
             }
@@ -1077,9 +1288,13 @@ public class DisplayActivity extends Activity {
             out.flush();
             out.close();
             logD("screensaver written: " + path);
+            lastWrittenScreensaverBitmap = bitmap;
+            pendingScreensaverBitmap = null;
         } catch (Throwable t) {
             logW("screensaver write failed: " + path + " — " + t
-                    + " (dir exists=" + new File(dirPath).exists() + ")");
+                    + " (dir exists=" + new File(dirPath).exists()
+                    + "; USB storage mounted on a computer?) Will retry when storage returns");
+            pendingScreensaverBitmap = bitmap;
         }
     }
 
@@ -1621,6 +1836,7 @@ public class DisplayActivity extends Activity {
         if (batteryView != null) batteryView.setVisibility(View.GONE);
         if (nextButton != null) nextButton.setVisibility(showNextButton ? View.VISIBLE : View.GONE);
         if (settingsButton != null) settingsButton.setVisibility(View.GONE);
+        if (exitButton != null) exitButton.setVisibility(View.GONE);
         if (customizeButton != null) customizeButton.setVisibility(View.GONE);
         if (menuLayout != null && menuScrim != null) {
             applyMenuLayoutParams();
@@ -1648,6 +1864,7 @@ public class DisplayActivity extends Activity {
         if (batteryView != null) batteryView.setVisibility(View.VISIBLE);
         if (nextButton != null) nextButton.setVisibility(View.VISIBLE);
         if (settingsButton != null) settingsButton.setVisibility(View.VISIBLE);
+        if (exitButton != null) exitButton.setVisibility(View.VISIBLE);
         // No forceFullRefresh here — showMenuStatus callers handle their own refresh
         if (menuLayout != null) {
             logD("menu measured w=" + menuLayout.getMeasuredWidth()
@@ -1895,6 +2112,10 @@ public class DisplayActivity extends Activity {
             pendingSleepRunnable = null;
             logD("sleepNow: cancelled pending sleepRunnable");
         }
+        if (pendingIdleSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingIdleSleepRunnable);
+            pendingIdleSleepRunnable = null;
+        }
         if (refreshRunnable != null) {
             refreshHandler.removeCallbacks(refreshRunnable);
             logD("sleepNow: cancelled pending refreshRunnable");
@@ -1948,12 +2169,12 @@ public class DisplayActivity extends Activity {
             public void run() {
                 pendingScreenOffRunnable = null;
                 // NOTE: sleepPending stays true until onResume() after the real wake.
-                logD("sleepNow: setting screen_off_timeout=1000 to force natural sleep");
+                logD("sleepNow: setting screen_off_timeout=1s to force natural sleep (restored on screen-off)");
                 try {
                     android.provider.Settings.System.putInt(
                         getContentResolver(),
                         android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
-                        1000);
+                        FORCED_SLEEP_TIMEOUT_MS);
                     logD("sleepNow: screen_off_timeout set to 1s");
                 } catch (Throwable t) {
                     logW("sleepNow: could not set timeout: " + t);
@@ -1962,7 +2183,7 @@ public class DisplayActivity extends Activity {
             }
         };
         refreshHandler.postDelayed(pendingScreenOffRunnable, 2000);
-        logD("sleepNow: setup complete, screen-off in 5s (sleepPending=true)");
+        logD("sleepNow: setup complete, screen-off in ~3s (sleepPending=true)");
     }
 
     private void flashEinkTransition() {
