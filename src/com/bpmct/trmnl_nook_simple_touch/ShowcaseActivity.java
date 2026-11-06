@@ -50,6 +50,14 @@ public class ShowcaseActivity extends Activity {
         return token != null && token.length() > 0;
     }
 
+    /** Returns true if at least one showcase cell has credentials. */
+    static boolean isAnyCellConfigured(Context context) {
+        for (int i = 0; i < NUM_CELLS; i++) {
+            if (isCellConfigured(context, i)) return true;
+        }
+        return false;
+    }
+
     /**
      * Returns true if only cell 0 is configured and cells 1–3 are all unconfigured.
      * In this case the app should skip the 2×2 grid and go straight to cell 0 fullscreen.
@@ -170,9 +178,12 @@ public class ShowcaseActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // If showcase mode was disabled (e.g. user saved credentials via web app),
-        // finish this activity so DisplayActivity takes over cleanly.
+        // If showcase mode was disabled (e.g. user saved credentials via web app, or
+        // unticked it in Settings via the header link), hand over to DisplayActivity.
+        // DisplayActivity finished itself when it launched us, so finishing alone
+        // would drop the user out of the app.
         if (!ApiPrefs.isShowcaseModeEnabled(this)) {
+            startActivity(new Intent(this, DisplayActivity.class));
             finish();
             return;
         }
@@ -240,6 +251,24 @@ public class ShowcaseActivity extends Activity {
                 }
             });
         }
+
+        // Settings link — the grid has no tap menu, so without this there is no way
+        // back to Settings (e.g. to turn showcase mode off) once it is enabled.
+        TextView settingsLink = new TextView(this);
+        settingsLink.setText("Settings →");
+        settingsLink.setTextSize(13);
+        settingsLink.setTextColor(0xFF444444);
+        settingsLink.setPadding(24, 4, 4, 4);
+        settingsLink.setOnTouchListener(new android.view.View.OnTouchListener() {
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                    startActivity(new Intent(ShowcaseActivity.this, SettingsActivity.class));
+                }
+                return true;
+            }
+        });
+        headerRow.addView(settingsLink, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         contentRoot.addView(headerRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.FILL_PARENT,
