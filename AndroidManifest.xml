@@ -23,6 +23,7 @@
         <activity
             android:name=".DisplayActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/app_name"
             android:theme="@style/FullscreenTheme" >
             <intent-filter>
@@ -34,26 +35,31 @@
         <activity
             android:name=".SettingsActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
             android:label="Settings"
             android:theme="@style/FullscreenTheme" />
         <activity
             android:name=".CredentialsActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
             android:label="Credentials"
             android:theme="@style/FullscreenTheme" />
         <activity
             android:name=".GiftModeSettingsActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
             android:label="Gift Mode Settings"
             android:theme="@style/FullscreenTheme" />
         <activity
             android:name=".ShowcaseSettingsActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
             android:label="Showcase Settings"
             android:theme="@style/FullscreenTheme" />
         <activity
             android:name=".ShowcaseActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
             android:label="Showcase"
             android:theme="@style/FullscreenTheme" />
     </application>

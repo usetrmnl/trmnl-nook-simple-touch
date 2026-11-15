@@ -38,6 +38,7 @@ public class SettingsActivity extends Activity {
     private CheckBox allowSelfSignedCheck;
     private CheckBox autoDisableWifiCheck;
     private EditText wifiTimeoutInput;
+    private EditText readTimeoutInput;
     private TextView wifiStatusView;
     private FrameLayout rootLayout;
     private FrameLayout outerRoot;
@@ -329,6 +330,37 @@ public class SettingsActivity extends Activity {
         wifiTimeoutHintParams.topMargin = 2;
         panelNetwork.addView(wifiTimeoutHint, wifiTimeoutHintParams);
 
+        TextView readTimeoutLabel = new TextView(this);
+        readTimeoutLabel.setText("Server response timeout (seconds)");
+        readTimeoutLabel.setTextColor(0xFF000000);
+        LinearLayout.LayoutParams readTimeoutLabelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        readTimeoutLabelParams.topMargin = 12;
+        panelNetwork.addView(readTimeoutLabel, readTimeoutLabelParams);
+
+        readTimeoutInput = new EditText(this);
+        readTimeoutInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        readTimeoutInput.setTextColor(0xFF000000);
+        readTimeoutInput.setText(String.valueOf(ApiPrefs.getHttpReadTimeoutSeconds(this)));
+        LinearLayout.LayoutParams readTimeoutInputParams = new LinearLayout.LayoutParams(
+                160, ViewGroup.LayoutParams.WRAP_CONTENT);
+        readTimeoutInputParams.topMargin = 4;
+        panelNetwork.addView(readTimeoutInput, readTimeoutInputParams);
+
+        TextView readTimeoutHint = new TextView(this);
+        readTimeoutHint.setText("How long to wait for the server to respond. Raise this if "
+                + "your self-hosted server is slow to render screens ("
+                + ApiPrefs.MIN_HTTP_READ_TIMEOUT_SECONDS + "\u2013"
+                + ApiPrefs.MAX_HTTP_READ_TIMEOUT_SECONDS + "s, default "
+                + ApiPrefs.DEFAULT_HTTP_READ_TIMEOUT_SECONDS + "s).");
+        readTimeoutHint.setTextSize(11);
+        readTimeoutHint.setTextColor(0xFF888888);
+        readTimeoutHint.setPadding(0, 0, 0, 0);
+        LinearLayout.LayoutParams readTimeoutHintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        readTimeoutHintParams.topMargin = 2;
+        panelNetwork.addView(readTimeoutHint, readTimeoutHintParams);
+
         main.addView(panelNetwork);
 
         // ── Panel: System ────────────────────────────────────────────────────
@@ -577,6 +609,7 @@ public class SettingsActivity extends Activity {
         if (allowSelfSignedCheck != null) allowSelfSignedCheck.setChecked(ApiPrefs.isAllowSelfSignedCerts(this));
         if (autoDisableWifiCheck != null) autoDisableWifiCheck.setChecked(ApiPrefs.isAutoDisableWifi(this));
         if (wifiTimeoutInput != null) wifiTimeoutInput.setText(String.valueOf(ApiPrefs.getWifiConnectTimeoutSeconds(this)));
+        if (readTimeoutInput != null) readTimeoutInput.setText(String.valueOf(ApiPrefs.getHttpReadTimeoutSeconds(this)));
         if (wifiStatusView != null) wifiStatusView.setText(getWifiStatusText());
     }
 
@@ -602,6 +635,16 @@ public class SettingsActivity extends Activity {
             if (raw.length() > 0) {
                 try {
                     ApiPrefs.setWifiConnectTimeoutSeconds(this, Integer.parseInt(raw));
+                } catch (NumberFormatException nfe) {
+                    // Leave the existing value untouched on bad input.
+                }
+            }
+        }
+        if (readTimeoutInput != null) {
+            String raw = readTimeoutInput.getText() != null ? readTimeoutInput.getText().toString().trim() : "";
+            if (raw.length() > 0) {
+                try {
+                    ApiPrefs.setHttpReadTimeoutSeconds(this, Integer.parseInt(raw));
                 } catch (NumberFormatException nfe) {
                     // Leave the existing value untouched on bad input.
                 }

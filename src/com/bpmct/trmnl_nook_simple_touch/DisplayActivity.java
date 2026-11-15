@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.app.AlarmManager;
+import android.app.KeyguardManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -143,6 +144,13 @@ public class DisplayActivity extends Activity {
     /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON
      * and restoring the 120s screen timeout until the device actually wakes. */
     private volatile boolean sleepPending = false;
+    /** True while another activity covers us with the screen on (user left the app, or a
+     *  translucent/dialog activity sits on top). While set we must not keep the lock screen
+     *  hidden, or that activity would be usable without the PIN. */
+    private boolean coveredByOtherActivity = false;
+    /** True from the refresh alarm until the screen turns off: the only time our window
+     *  may sit above a locked device's lock screen (see mayShowOverLockScreen). */
+    private boolean wokeByAlarm = false;
     private Runnable pendingWifiRecoveryRunnable;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
@@ -477,6 +485,7 @@ public class DisplayActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 DisplayActivity a = DisplayActivity.this;
+                wokeByAlarm = true;
                 if (ApiPrefs.isAllowSleep(a)) {
                     setKeepScreenAwake(true);
                 }
@@ -516,6 +525,10 @@ public class DisplayActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 restoreScreenTimeout();
+                // The unattended wake is over: drop our place above the lock screen so
+                // the next manual wake shows the lock screen (see setKeepScreenAwake).
+                wokeByAlarm = false;
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
                 logD("screen off — user screen timeout restored");
             }
         };
@@ -605,6 +618,7 @@ public class DisplayActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         sleepPending = false;
+        coveredByOtherActivity = false;
         // Re-capture in case the user changed their timeout while we were away,
         // then restore it (self-heals a stranded forced-sleep value too) (#50).
         captureOriginalScreenTimeout();
@@ -883,12 +897,20 @@ public class DisplayActivity extends Activity {
     private boolean ensureWifiOnWhenForeground() {
         if (!ApiPrefs.isAllowSleep(this)) return false;
         WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-        if (wifi != null && !wifi.isWifiEnabled()) {
+        // Only turn it on when it is really off: a second setWifiEnabled(true) while the
+        // radio is still enabling (the alarm path already asked) restarts it, so a later
+        // sleepNow() saw "enabling" and left WiFi on all night.
+        if (wifi != null && isWifiOffOrTurningOff(wifi)) {
             wifi.setWifiEnabled(true);
             logD("wifi on (app in foreground), wait ~15s for connection");
             return true;
         }
         return false;
+    }
+
+    private static boolean isWifiOffOrTurningOff(WifiManager wifi) {
+        int st = wifi.getWifiState();
+        return st == WifiManager.WIFI_STATE_DISABLED || st == WifiManager.WIFI_STATE_DISABLING;
     }
 
     private static final long WIFI_WARMUP_MS = 15 * 1000;
@@ -930,6 +952,17 @@ public class DisplayActivity extends Activity {
     protected void onPause() {
         super.onPause();
 
+        // Screen-off also pauses us; then the lock screen must stay hidden behind our
+        // window (#49). Any other pause means something else is in front of us. Android
+        // only re-shows the keyguard when the top *fullscreen opaque* window lacks
+        // FLAG_SHOW_WHEN_LOCKED, so a translucent activity on top (e.g. the quick-nav
+        // NookSettings scene) would otherwise run without the PIN. Drop the flag.
+        PowerManager pmPause = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pmPause == null || pmPause.isScreenOn()) {
+            coveredByOtherActivity = true;
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        }
+        logD("onPause: coveredByOtherActivity=" + coveredByOtherActivity);
         // Restore screen timeout whenever we leave — user is navigating around the device.
         restoreScreenTimeout();
         if (pendingIdleSleepRunnable != null) {
@@ -1075,20 +1108,40 @@ public class DisplayActivity extends Activity {
      * When awake=false we clear FLAG_KEEP_SCREEN_ON so the device can blank and show the NOOK screensaver
      * (the image we write to ApiPrefs.getScreensaverPath()). */
     private void setKeepScreenAwake(boolean awake) {
-        int flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        Window win = getWindow();
+        int flags = WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
-        Window win = getWindow();
         if (awake) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
                 pm.userActivity(SystemClock.uptimeMillis(), false);
             }
             win.addFlags(flags);
+            if (mayShowOverLockScreen()) {
+                win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            } else {
+                win.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            }
         } else {
+            // Keep FLAG_SHOW_WHEN_LOCKED until the screen is actually off (cleared in
+            // screenOffReceiver). With a PIN lock, FLAG_DISMISS_KEYGUARD is ignored and the
+            // keyguard is only hidden while this flag is set; clearing it while the screen
+            // is on re-shows the PIN screen, which disables the screen timeout and holds
+            // the screen on for 90s (#49).
             win.clearFlags(flags);
         }
+    }
+
+    /** Whether our window may sit above the lock screen. Only for the unattended
+     * alarm wake (until the screen turns off) or when the device isn't locked. A user
+     * waking a locked device by hand gets the lock screen, and nothing that opens on
+     * top of us (e.g. the quick-nav bar's apps) may inherit our place above it. */
+    private boolean mayShowOverLockScreen() {
+        if (coveredByOtherActivity) return false;
+        if (wokeByAlarm) return true;
+        KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        return km == null || !km.inKeyguardRestrictedInputMode();
     }
 
     /** Schedule alarm to wake and trigger next fetch at (now + millis). */
@@ -1879,10 +1932,15 @@ public class DisplayActivity extends Activity {
     }
 
     private void hideMenu() {
+        boolean wasVisible = menuVisible;
         menuVisible = false;
         if (menuLayout != null) menuLayout.setVisibility(View.GONE);
         if (menuScrim != null) menuScrim.setVisibility(View.GONE);
-        flashEinkTransition();
+        // The black/white flash clears menu ghosting. Every fetch also calls hideMenu(),
+        // so only flash when the menu was actually showing (#57).
+        if (wasVisible) {
+            flashEinkTransition();
+        }
     }
 
     /**
@@ -2146,7 +2204,9 @@ public class DisplayActivity extends Activity {
         // cells, which need WiFi to stay on for the next cell fetch.
         if (!isShowcaseCell() && ApiPrefs.isAutoDisableWifi(this)) {
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-            if (wifi != null && wifi.isWifiEnabled()) {
+            // Also catch "enabling": isWifiEnabled() is false then, but the radio comes
+            // up a moment later and would stay on while we sleep.
+            if (wifi != null && !isWifiOffOrTurningOff(wifi)) {
                 wifi.setWifiEnabled(false);
                 logD("sleepNow: WiFi disabled");
             }
@@ -2432,7 +2492,7 @@ public class DisplayActivity extends Activity {
                 URL u = new URL(url);
                 conn = (HttpURLConnection) u.openConnection();
                 conn.setConnectTimeout(15000);
-                conn.setReadTimeout(20000);
+                conn.setReadTimeout(ApiPrefs.getHttpReadTimeoutSeconds(a0) * 1000);
                 conn.setRequestProperty("User-Agent", "TRMNL-Nook/1.0 (Android 2.1)");
                 conn.setRequestProperty("Accept", "application/json");
                 
