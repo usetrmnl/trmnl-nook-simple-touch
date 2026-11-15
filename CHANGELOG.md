@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **PIN lock no longer shows the passcode screen for 90 seconds after every refresh** (#49) - When going to sleep the app cleared its "show over the lock screen" flag. With a PIN set, that brought back the passcode screen, which keeps the screen on for 90 seconds and ignores the screen timeout, so the passcode prompt covered the display for most of each refresh cycle. The app now stays above the lock screen while it is open; the device stays locked and leaving the app still asks for the PIN.
+- **No more black/white flash on every new image** (#57) - The flash meant to clear menu ghosting ran after every fetch, even when the menu was never opened, causing about 9 full-screen e-ink updates per refresh and leftover black rectangles. It now only runs when the menu was actually open.
+- **Image no longer shows sideways and stretched when another app left the device in landscape** (#56) - All screens are now locked to portrait.
+
+### Added
+- **Configurable server response timeout** (`Settings → Network → Server response timeout`) (#58) - Slow self-hosted servers (e.g. LaraPaper on a Raspberry Pi) can take longer than 20 s to render. When the request timed out the server still advanced its playlist, so screens were skipped. The default stays 20 s; raise it up to 120 s if your server is slow.
+
+---
+
 ## [v0.16.0] - 2026-08-31
 
 ### Fixed
