@@ -897,12 +897,20 @@ public class DisplayActivity extends Activity {
     private boolean ensureWifiOnWhenForeground() {
         if (!ApiPrefs.isAllowSleep(this)) return false;
         WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-        if (wifi != null && !wifi.isWifiEnabled()) {
+        // Only turn it on when it is really off: a second setWifiEnabled(true) while the
+        // radio is still enabling (the alarm path already asked) restarts it, so a later
+        // sleepNow() saw "enabling" and left WiFi on all night.
+        if (wifi != null && isWifiOffOrTurningOff(wifi)) {
             wifi.setWifiEnabled(true);
             logD("wifi on (app in foreground), wait ~15s for connection");
             return true;
         }
         return false;
+    }
+
+    private static boolean isWifiOffOrTurningOff(WifiManager wifi) {
+        int st = wifi.getWifiState();
+        return st == WifiManager.WIFI_STATE_DISABLED || st == WifiManager.WIFI_STATE_DISABLING;
     }
 
     private static final long WIFI_WARMUP_MS = 15 * 1000;
@@ -2196,7 +2204,9 @@ public class DisplayActivity extends Activity {
         // cells, which need WiFi to stay on for the next cell fetch.
         if (!isShowcaseCell() && ApiPrefs.isAutoDisableWifi(this)) {
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-            if (wifi != null && wifi.isWifiEnabled()) {
+            // Also catch "enabling": isWifiEnabled() is false then, but the radio comes
+            // up a moment later and would stay on while we sleep.
+            if (wifi != null && !isWifiOffOrTurningOff(wifi)) {
                 wifi.setWifiEnabled(false);
                 logD("sleepNow: WiFi disabled");
             }
