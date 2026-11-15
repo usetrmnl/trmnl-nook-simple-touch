@@ -1075,11 +1075,15 @@ public class DisplayActivity extends Activity {
      * When awake=false we clear FLAG_KEEP_SCREEN_ON so the device can blank and show the NOOK screensaver
      * (the image we write to ApiPrefs.getScreensaverPath()). */
     private void setKeepScreenAwake(boolean awake) {
-        int flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        Window win = getWindow();
+        // Stay above the lock screen even while going to sleep. With a PIN lock,
+        // FLAG_DISMISS_KEYGUARD is ignored, so the keyguard is only hidden while this
+        // flag is set. Clearing it re-shows the PIN screen, which disables the screen
+        // timeout and holds the screen on for 90s (#49). The device stays locked.
+        win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        int flags = WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
-        Window win = getWindow();
         if (awake) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
@@ -1879,10 +1883,15 @@ public class DisplayActivity extends Activity {
     }
 
     private void hideMenu() {
+        boolean wasVisible = menuVisible;
         menuVisible = false;
         if (menuLayout != null) menuLayout.setVisibility(View.GONE);
         if (menuScrim != null) menuScrim.setVisibility(View.GONE);
-        flashEinkTransition();
+        // The black/white flash clears menu ghosting. Every fetch also calls hideMenu(),
+        // so only flash when the menu was actually showing (#57).
+        if (wasVisible) {
+            flashEinkTransition();
+        }
     }
 
     /**
@@ -2432,7 +2441,7 @@ public class DisplayActivity extends Activity {
                 URL u = new URL(url);
                 conn = (HttpURLConnection) u.openConnection();
                 conn.setConnectTimeout(15000);
-                conn.setReadTimeout(20000);
+                conn.setReadTimeout(ApiPrefs.getHttpReadTimeoutSeconds(a0) * 1000);
                 conn.setRequestProperty("User-Agent", "TRMNL-Nook/1.0 (Android 2.1)");
                 conn.setRequestProperty("Accept", "application/json");
                 
