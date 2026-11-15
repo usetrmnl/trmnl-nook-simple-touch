@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.app.AlarmManager;
+import android.app.KeyguardManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -147,6 +148,9 @@ public class DisplayActivity extends Activity {
      *  translucent/dialog activity sits on top). While set we must not keep the lock screen
      *  hidden, or that activity would be usable without the PIN. */
     private boolean coveredByOtherActivity = false;
+    /** True from the refresh alarm until the screen turns off: the only time our window
+     *  may sit above a locked device's lock screen (see mayShowOverLockScreen). */
+    private boolean wokeByAlarm = false;
     private Runnable pendingWifiRecoveryRunnable;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
@@ -481,6 +485,7 @@ public class DisplayActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 DisplayActivity a = DisplayActivity.this;
+                wokeByAlarm = true;
                 if (ApiPrefs.isAllowSleep(a)) {
                     setKeepScreenAwake(true);
                 }
@@ -520,6 +525,10 @@ public class DisplayActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 restoreScreenTimeout();
+                // The unattended wake is over: drop our place above the lock screen so
+                // the next manual wake shows the lock screen (see setKeepScreenAwake).
+                wokeByAlarm = false;
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
                 logD("screen off — user screen timeout restored");
             }
         };
@@ -1092,16 +1101,6 @@ public class DisplayActivity extends Activity {
      * (the image we write to ApiPrefs.getScreensaverPath()). */
     private void setKeepScreenAwake(boolean awake) {
         Window win = getWindow();
-        // Stay above the lock screen even while going to sleep. With a PIN lock,
-        // FLAG_DISMISS_KEYGUARD is ignored, so the keyguard is only hidden while this
-        // flag is set. Clearing it re-shows the PIN screen, which disables the screen
-        // timeout and holds the screen on for 90s (#49). The device stays locked.
-        // Never while another activity is in front of us (see onPause).
-        if (coveredByOtherActivity) {
-            win.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
-        } else {
-            win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
-        }
         int flags = WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
@@ -1111,9 +1110,30 @@ public class DisplayActivity extends Activity {
                 pm.userActivity(SystemClock.uptimeMillis(), false);
             }
             win.addFlags(flags);
+            if (mayShowOverLockScreen()) {
+                win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            } else {
+                win.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            }
         } else {
+            // Keep FLAG_SHOW_WHEN_LOCKED until the screen is actually off (cleared in
+            // screenOffReceiver). With a PIN lock, FLAG_DISMISS_KEYGUARD is ignored and the
+            // keyguard is only hidden while this flag is set; clearing it while the screen
+            // is on re-shows the PIN screen, which disables the screen timeout and holds
+            // the screen on for 90s (#49).
             win.clearFlags(flags);
         }
+    }
+
+    /** Whether our window may sit above the lock screen. Only for the unattended
+     * alarm wake (until the screen turns off) or when the device isn't locked. A user
+     * waking a locked device by hand gets the lock screen, and nothing that opens on
+     * top of us (e.g. the quick-nav bar's apps) may inherit our place above it. */
+    private boolean mayShowOverLockScreen() {
+        if (coveredByOtherActivity) return false;
+        if (wokeByAlarm) return true;
+        KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        return km == null || !km.inKeyguardRestrictedInputMode();
     }
 
     /** Schedule alarm to wake and trigger next fetch at (now + millis). */
