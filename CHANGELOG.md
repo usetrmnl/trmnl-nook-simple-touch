@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **PIN lock no longer shows the passcode screen for 90 seconds after every refresh** (#49) - When going to sleep the app cleared its "show over the lock screen" flag. With a PIN set, that brought back the passcode screen, which keeps the screen on for 90 seconds and ignores the screen timeout, so the passcode prompt covered the display for most of each refresh cycle. The app now stays above the lock screen while it is open; the device stays locked and leaving the app still asks for the PIN.
+- **PIN lock no longer shows the passcode screen for 90 seconds after every refresh** (#49) - When going to sleep the app cleared its "show over the lock screen" flag. With a PIN set, that brought back the passcode screen, which keeps the screen on for 90 seconds and ignores the screen timeout, so the passcode prompt covered the display for most of each refresh cycle. The app now clears that flag only once the screen is off, so the passcode screen no longer appears during the refresh cycle. The app only shows over the lock screen during an automatic refresh; waking the device by hand shows the lock screen as usual, and nothing can be opened from the app without the PIN.
 - **No more black/white flash on every new image** (#57) - The flash meant to clear menu ghosting ran after every fetch, even when the menu was never opened, causing about 9 full-screen e-ink updates per refresh and leftover black rectangles. It now only runs when the menu was actually open.
 - **Image no longer shows sideways and stretched when another app left the device in landscape** (#56) - All screens are now locked to portrait.
 
