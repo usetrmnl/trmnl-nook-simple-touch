@@ -143,6 +143,10 @@ public class DisplayActivity extends Activity {
     /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON
      * and restoring the 120s screen timeout until the device actually wakes. */
     private volatile boolean sleepPending = false;
+    /** True while another activity covers us with the screen on (user left the app, or a
+     *  translucent/dialog activity sits on top). While set we must not keep the lock screen
+     *  hidden, or that activity would be usable without the PIN. */
+    private boolean coveredByOtherActivity = false;
     private Runnable pendingWifiRecoveryRunnable;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
@@ -605,6 +609,7 @@ public class DisplayActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         sleepPending = false;
+        coveredByOtherActivity = false;
         // Re-capture in case the user changed their timeout while we were away,
         // then restore it (self-heals a stranded forced-sleep value too) (#50).
         captureOriginalScreenTimeout();
@@ -930,6 +935,17 @@ public class DisplayActivity extends Activity {
     protected void onPause() {
         super.onPause();
 
+        // Screen-off also pauses us; then the lock screen must stay hidden behind our
+        // window (#49). Any other pause means something else is in front of us. Android
+        // only re-shows the keyguard when the top *fullscreen opaque* window lacks
+        // FLAG_SHOW_WHEN_LOCKED, so a translucent activity on top (e.g. the quick-nav
+        // NookSettings scene) would otherwise run without the PIN. Drop the flag.
+        PowerManager pmPause = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pmPause == null || pmPause.isScreenOn()) {
+            coveredByOtherActivity = true;
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        }
+        logD("onPause: coveredByOtherActivity=" + coveredByOtherActivity);
         // Restore screen timeout whenever we leave — user is navigating around the device.
         restoreScreenTimeout();
         if (pendingIdleSleepRunnable != null) {
@@ -1080,7 +1096,12 @@ public class DisplayActivity extends Activity {
         // FLAG_DISMISS_KEYGUARD is ignored, so the keyguard is only hidden while this
         // flag is set. Clearing it re-shows the PIN screen, which disables the screen
         // timeout and holds the screen on for 90s (#49). The device stays locked.
-        win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        // Never while another activity is in front of us (see onPause).
+        if (coveredByOtherActivity) {
+            win.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        } else {
+            win.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        }
         int flags = WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
