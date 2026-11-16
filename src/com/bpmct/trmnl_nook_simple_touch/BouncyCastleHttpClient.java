@@ -114,6 +114,10 @@ public class BouncyCastleHttpClient {
     public static boolean isAvailable() {
         return bcAvailable;
     }
+
+    private static int readTimeoutMs(Context context) {
+        return ApiPrefs.getHttpReadTimeoutSeconds(context) * 1000;
+    }
     
     /**
      * Makes an HTTPS GET request using BouncyCastle TLS.
@@ -203,7 +207,7 @@ public class BouncyCastleHttpClient {
         // Create socket with connection timeout
         Socket socket = new Socket();
         socket.connect(new java.net.InetSocketAddress(host, port), 20000);
-        socket.setSoTimeout(20000);
+        socket.setSoTimeout(readTimeoutMs(context));
         
         try {
             // Create TLS client protocol (SpongyCastle 1.58 uses 2-arg constructor)
@@ -360,7 +364,7 @@ public class BouncyCastleHttpClient {
 
         Socket socket = new Socket();
         socket.connect(new java.net.InetSocketAddress(host, port), 20000);
-        socket.setSoTimeout(20000);
+        socket.setSoTimeout(readTimeoutMs(context));
         try {
             TlsClientProtocol tlsProtocol = new TlsClientProtocol(
                     socket.getInputStream(), socket.getOutputStream());
@@ -472,7 +476,7 @@ public class BouncyCastleHttpClient {
 
         Socket socket = new Socket();
         socket.connect(new java.net.InetSocketAddress(host, port), 20000);
-        socket.setSoTimeout(20000);
+        socket.setSoTimeout(readTimeoutMs(context));
         try {
             OutputStream out = socket.getOutputStream();
             InputStream in = socket.getInputStream();
@@ -597,7 +601,7 @@ public class BouncyCastleHttpClient {
 
         Socket socket = new Socket();
         socket.connect(new java.net.InetSocketAddress(host, port), 20000);
-        socket.setSoTimeout(20000);
+        socket.setSoTimeout(readTimeoutMs(context));
         try {
             OutputStream out = socket.getOutputStream();
             InputStream in = socket.getInputStream();

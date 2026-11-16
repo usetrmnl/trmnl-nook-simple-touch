@@ -56,6 +56,28 @@ The sleep sequence in `DisplayActivity.sleepNow()`:
 
 No root, no su, no Superuser dialog.
 
+### Lock screen (PIN) interaction
+
+The NOOK keyguard is `LockPinKeyguardView` (B&N, in `android.policy.jar`). Verified by decompiling Phoenix FW 1.2.2 and 1.1.5 (identical logic) and on a 1.2.2 device:
+
+- `PhoneWindowManager.finishLayoutLw` only honours `FLAG_DISMISS_KEYGUARD` when the keyguard is **not** secure. With a PIN set it falls through to `FLAG_SHOW_WHEN_LOCKED`, which only *hides* the keyguard behind our window (device stays locked).
+- While the keyguard is visible and not hidden, `KeyguardViewMediator.adjustUserActivityLocked` disables user activity and `pokeWakelock()` holds the screen on for **90 s**. The 1 s `SCREEN_OFF_TIMEOUT` trick does nothing during that time.
+- So `setKeepScreenAwake(false)` must not clear `FLAG_SHOW_WHEN_LOCKED` while the screen is on: that brings back the PIN screen ("Enter Your Passcode") and the 90 s hold on every sleep (#49). It is cleared in the `ACTION_SCREEN_OFF` receiver instead. Measured: 89 s from `sleepNow: done` to screen off before the fix, 4.9 s after.
+- But the flag must not stay set while the user can interact with a locked device: with our window over the keyguard, the `n`-button quick-nav bar works, and anything it opens that is translucent / not fullscreen (e.g. the NookSettings Tasker scene) stays above the keyguard, because `PhoneWindowManager` decides from the top *fullscreen opaque* window, which is still ours. Rules in `DisplayActivity.mayShowOverLockScreen()`: set the flag only during the unattended alarm wake (`wokeByAlarm`, cleared at screen-off) or when the device is not locked (`KeyguardManager.inKeyguardRestrictedInputMode()`), and never while another activity is in front of us (`onPause` with the screen on). A manual wake of a locked device shows the lock screen. Verified on device.
+- **NookSettings (`com.home.nmyshkin.nooksettings`, the quick-nav "settings" button) disables the keyguard system-wide while its process is alive** (it is the only app holding `DISABLE_KEYGUARD`). While testing lock behaviour, kill it first or results are meaningless.
+- Leaving the app (Home, Settings, any opaque activity) shows the PIN screen.
+- The screensaver is drawn by `PowerManagerService.createScreensaver` as its own window at screen-off, independent of the keyguard.
+- Do not use `KeyguardManager.KeyguardLock.disableKeyguard()`: on this firmware `setKeyguardEnabled(false)` has no secure check and fully unlocks the device.
+
+## On-device testing tips
+
+- `am`, `pm` (`adb install`) and `input` run through `app_process` and **hang while the screen is off**. On this firmware `am start` also never returns even when it succeeds — wrap it in `timeout`.
+- Wake the screen from adb by pressing the `n` key: `sendevent /dev/input/event1 1 102 1; sendevent /dev/input/event1 0 0 0; sendevent /dev/input/event1 1 102 0; sendevent /dev/input/event1 0 0 0`.
+- ADB over WiFi drops when the CPU suspends. For screen/keyguard tests hold a kernel wakelock (`echo test > /sys/power/wake_lock`, undo via `wake_unlock`); screen-off, keyguard and screensaver still behave normally. Release it for battery/WiFi-reconnect tests.
+- `echo 1 > /sys/devices/platform/omap3epfb.0/graphics/fb0/epd_debug` logs every e-ink update to `dmesg` (`req FULLSCREEN ... GC` = full refresh).
+- The framebuffer (`/dev/graphics/fb0`, 600x1600 RGB565, live half given by `/sys/class/graphics/fb0/pan`) shows what Android drew, not e-ink artifacts.
+- PIN lock lives in `Settings.System`: `lock_pin_autolock` and `lock_pin_hash` = base64(sha1(pin)).
+
 ---
 
 ## Build Environment

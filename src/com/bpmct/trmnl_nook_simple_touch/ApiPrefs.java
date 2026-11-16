@@ -25,6 +25,12 @@ public class ApiPrefs {
     private static final String KEY_SAVED_SCREEN_TIMEOUT = "saved_screen_timeout_ms";
     private static final String KEY_SHOWCASE_MODE = "showcase_mode";
     private static final String KEY_WIFI_CONNECT_TIMEOUT = "wifi_connect_timeout_seconds";
+    private static final String KEY_HTTP_READ_TIMEOUT = "http_read_timeout_seconds";
+    /** Default HTTP read timeout (seconds). Matches the historical hardcoded 20s. */
+    public static final int DEFAULT_HTTP_READ_TIMEOUT_SECONDS = 20;
+    /** Slow BYOS servers (e.g. LaraPaper on a Pi) can take 30s+ to render (#58). */
+    public static final int MIN_HTTP_READ_TIMEOUT_SECONDS = 10;
+    public static final int MAX_HTTP_READ_TIMEOUT_SECONDS = 120;
     /** Default association timeout (seconds). Matches the historical CONNECTIVITY_MAX_WAIT_MS (5s). */
     public static final int DEFAULT_WIFI_CONNECT_TIMEOUT_SECONDS = 5;
     /** Clamp bounds so a bad value can't brick the wake cycle (too short = never connects,
@@ -382,6 +388,23 @@ public class ApiPrefs {
         if (seconds > MAX_WIFI_CONNECT_TIMEOUT_SECONDS) seconds = MAX_WIFI_CONNECT_TIMEOUT_SECONDS;
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putInt(KEY_WIFI_CONNECT_TIMEOUT, seconds).commit();
+    }
+
+    /** HTTP read (socket) timeout in seconds for API and image requests, clamped to [MIN, MAX]. */
+    public static int getHttpReadTimeoutSeconds(Context context) {
+        if (context == null) return DEFAULT_HTTP_READ_TIMEOUT_SECONDS;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        int seconds = prefs.getInt(KEY_HTTP_READ_TIMEOUT, DEFAULT_HTTP_READ_TIMEOUT_SECONDS);
+        if (seconds < MIN_HTTP_READ_TIMEOUT_SECONDS) seconds = MIN_HTTP_READ_TIMEOUT_SECONDS;
+        if (seconds > MAX_HTTP_READ_TIMEOUT_SECONDS) seconds = MAX_HTTP_READ_TIMEOUT_SECONDS;
+        return seconds;
+    }
+
+    public static void setHttpReadTimeoutSeconds(Context context, int seconds) {
+        if (seconds < MIN_HTTP_READ_TIMEOUT_SECONDS) seconds = MIN_HTTP_READ_TIMEOUT_SECONDS;
+        if (seconds > MAX_HTTP_READ_TIMEOUT_SECONDS) seconds = MAX_HTTP_READ_TIMEOUT_SECONDS;
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putInt(KEY_HTTP_READ_TIMEOUT, seconds).commit();
     }
 
     /** Whether the initial screensaver has been written to disk at least once. */

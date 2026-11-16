@@ -7,6 +7,22 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **Showcase mode can no longer trap you on the "Pre-Loaded Screens" grid** - The grid has no tap menu, and every app launch routed straight back to it, so once showcase mode was ticked there was no way back to Settings to untick it (only clearing the app's data or reinstalling helped). The grid header now has a **Settings →** link, unticking showcase mode there returns you to the normal display instead of closing the app, and showcase mode is skipped entirely while none of its four cells are configured.
 
+---
+
+## [v0.17.0] - 2026-11-15
+
+### Fixed
+- **PIN lock no longer shows the passcode screen for 90 seconds after every refresh** (#49) - When going to sleep the app cleared its "show over the lock screen" flag. With a PIN set, that brought back the passcode screen, which keeps the screen on for 90 seconds and ignores the screen timeout, so the passcode prompt covered the display for most of each refresh cycle. The app now clears that flag only once the screen is off, so the passcode screen no longer appears during the refresh cycle. The app only shows over the lock screen during an automatic refresh; waking the device by hand shows the lock screen as usual, and nothing can be opened from the app without the PIN.
+- **No more black/white flash on every new image** (#57) - The flash meant to clear menu ghosting ran after every fetch, even when the menu was never opened, causing about 9 full-screen e-ink updates per refresh and leftover black rectangles. It now only runs when the menu was actually open.
+- **Image no longer shows sideways and stretched when another app left the device in landscape** (#56) - All screens are now locked to portrait.
+- **WiFi is turned off during sleep more reliably** - With "Auto-disable WiFi" on, the app sometimes left WiFi on while asleep, which drains the battery. On FW 1.1.5 this happened on about a third of sleeps. The app asked to turn WiFi on twice when waking, which restarted the radio and confused the check before sleep.
+- **Docs:** FW 1.1.5 is now tested (#53).
+
+### Added
+- **Configurable server response timeout** (`Settings → Network → Server response timeout`) (#58) - Slow self-hosted servers (e.g. LaraPaper on a Raspberry Pi) can take longer than 20 s to render. When the request timed out the server still advanced its playlist, so screens were skipped. The default stays 20 s; raise it up to 120 s if your server is slow.
+
+---
+
 ## [v0.16.0] - 2026-08-31
 
 ### Fixed
