@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v0.17.1] - 2026-11-15
 
 ### Fixed
 - **Showcase mode can no longer trap you on the "Pre-Loaded Screens" grid** - The grid has no tap menu, and every app launch routed straight back to it, so once showcase mode was ticked there was no way back to Settings to untick it (only clearing the app's data or reinstalling helped). The grid header now has a **Settings →** link, unticking showcase mode there returns you to the normal display instead of closing the app, and showcase mode is skipped entirely while none of its four cells are configured.
