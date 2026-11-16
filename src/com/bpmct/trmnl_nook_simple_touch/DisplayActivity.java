@@ -558,7 +558,10 @@ public class DisplayActivity extends Activity {
         if (!isShowcaseCell() && getIntent().getBooleanExtra("show_gift_screen", false)) {
             showGiftModeScreen();
             return;
-        } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)) {
+        } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)
+                && ShowcaseActivity.isAnyCellConfigured(this)) {
+            // With no cells configured the grid is just four "Not configured" boxes,
+            // so fall through to the normal display (which has the Settings menu).
             if (ShowcaseActivity.isOnlyCell0Configured(this)) {
                 // Single cell configured — launch it fullscreen directly, skip the grid
                 Intent si = new Intent(this, DisplayActivity.class);
@@ -639,7 +642,10 @@ public class DisplayActivity extends Activity {
         if (!isShowcaseCell() && getIntent().getBooleanExtra("show_gift_screen", false)) {
             showGiftModeScreen();
             return;
-        } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)) {
+        } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)
+                && ShowcaseActivity.isAnyCellConfigured(this)) {
+            // With no cells configured the grid is just four "Not configured" boxes,
+            // so fall through to the normal display (which has the Settings menu).
             if (ShowcaseActivity.isOnlyCell0Configured(this)) {
                 Intent si = new Intent(this, DisplayActivity.class);
                 si.putExtra(EXTRA_SHOWCASE_API_ID,    ShowcaseActivity.getCellId(this, 0));
