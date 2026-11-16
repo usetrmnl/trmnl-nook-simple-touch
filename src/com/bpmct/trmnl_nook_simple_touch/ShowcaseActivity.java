@@ -133,14 +133,18 @@ public class ShowcaseActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // FLAG_DISMISS_KEYGUARD, not FLAG_SHOW_WHEN_LOCKED: the grid is an always-on
+        // screen, so showing it over a PIN lock would let anyone use the n-button
+        // quick-nav bar without the PIN. Without a PIN the lock screen is still
+        // dismissed and the grid shows straight away; with a PIN the user unlocks first.
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN |
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN |
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
 
         FrameLayout root = buildUI();
@@ -189,7 +193,7 @@ public class ShowcaseActivity extends Activity {
         }
         getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
         // Refresh grid in case a cell was just updated by DisplayActivity
         loadCachedBitmaps();
