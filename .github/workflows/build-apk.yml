@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install SDKMAN and Java 8
         shell: bash
@@ -150,14 +150,14 @@ jobs:
           echo "path=${APK_PATH}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trmnl-nook-simple-touch-apk
           path: ${{ steps.apk.outputs.path }}
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           prerelease: ${{ contains(github.ref_name, '-rc.') || contains(github.ref_name, '-rc') }}
           files: ${{ steps.apk.outputs.path }}
